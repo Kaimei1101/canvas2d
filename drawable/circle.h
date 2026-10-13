@@ -2,6 +2,7 @@
 #define CIRCLE_H
 
 #include "drawable.h"
+#include "linetype.h"
 #include "point.h"
 #include "rgba.h"
 
@@ -15,14 +16,17 @@ class Circle : public Drawable
     RGBA fillColor;
     bool stroke;
     bool fill;
+    LineType lineType;
 
   public:
     Circle(Point center, double radius, bool fill = false,
            RGBA fillColor = RGBA{255, 255, 255}, bool stroke = true,
-           double width = 1, RGBA strokeColor = RGBA{0, 0, 0});
+           double width = 1, RGBA strokeColor = RGBA{0, 0, 0},
+           LineType lineType = LineType{});
     Circle(Point center, Point edge, bool fill = false,
            RGBA fillColor = RGBA{255, 255, 255}, bool stroke = true,
-           double width = 1, RGBA strokeColor = RGBA{0, 0, 0});
+           double width = 1, RGBA strokeColor = RGBA{0, 0, 0},
+           LineType lineType = LineType{});
     void draw(RenderTarget &rt) const override;
 };
 

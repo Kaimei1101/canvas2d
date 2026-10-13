@@ -4,10 +4,13 @@
 #include <QMainWindow>
 
 #include "canvaswidget.h"
+#include "linetype.h"
 
 class MainWindow : public QMainWindow
 {
     CanvasWidget canvasWidget;
+
+    LineType lineTypePresets[4];
 
   public:
     explicit MainWindow(QWidget *parent = nullptr);

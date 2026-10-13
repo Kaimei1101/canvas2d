@@ -23,7 +23,7 @@ void CanvasWidget::paintEvent(QPaintEvent *e)
         if (!operations.empty()) {
             canvas.drawShape(Line{operations.back(),
                                   canvas.getCamera().screenToWorld(lastPos),
-                                  lineWidth, strokeColor});
+                                  lineWidth, strokeColor, lineType});
         }
         break;
     case Tool::Circle:
@@ -31,7 +31,7 @@ void CanvasWidget::paintEvent(QPaintEvent *e)
             const auto &center = operations.back();
             canvas.drawShape(
                 Circle{center, canvas.getCamera().screenToWorld(lastPos), fill,
-                       fillColor, stroke, lineWidth, strokeColor});
+                       fillColor, stroke, lineWidth, strokeColor, lineType});
         }
         break;
     case Tool::Polygon:
@@ -41,7 +41,7 @@ void CanvasWidget::paintEvent(QPaintEvent *e)
         auto verts = operations;
         verts.push_back(canvas.getCamera().screenToWorld(lastPos));
         canvas.drawShape(Polygon{std::move(verts), fill, fillColor, stroke,
-                                 lineWidth, strokeColor});
+                                 lineWidth, strokeColor, lineType});
         break;
     }
     QImage img{canvas.getRenderTarget().getPixels().as_raw(), canvas.getWidth(),
@@ -86,8 +86,9 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
         switch (tool) {
         case Tool::Line:
             if (!operations.empty()) {
-                canvas.addShape(std::make_unique<Line>(
-                    operations.back(), worldPosition, lineWidth, strokeColor));
+                canvas.addShape(std::make_unique<Line>(operations.back(),
+                                                       worldPosition, lineWidth,
+                                                       strokeColor, lineType));
                 operations.pop_back();
                 update();
             }
@@ -98,7 +99,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
                 const auto &center = operations.back();
                 canvas.addShape(std::make_unique<Circle>(
                     center, worldPosition, fill, fillColor, stroke, lineWidth,
-                    strokeColor));
+                    strokeColor, lineType));
                 operations.pop_back();
                 update();
             } else {
@@ -113,8 +114,9 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
         switch (tool) {
         case Tool::Line:
             if (!operations.empty()) {
-                canvas.addShape(std::make_unique<Line>(
-                    operations.back(), worldPosition, lineWidth, strokeColor));
+                canvas.addShape(std::make_unique<Line>(operations.back(),
+                                                       worldPosition, lineWidth,
+                                                       strokeColor, lineType));
                 operations.pop_back();
                 update();
             }
@@ -124,7 +126,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
                 const auto &center = operations.back();
                 canvas.addShape(std::make_unique<Circle>(
                     center, worldPosition, fill, fillColor, stroke, lineWidth,
-                    strokeColor));
+                    strokeColor, lineType));
                 operations.pop_back();
                 update();
             } else {
@@ -136,7 +138,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
             if (operations.size() > 2) {
                 canvas.addShape(std::make_unique<Polygon>(
                     std::move(operations), fill, fillColor, stroke, lineWidth,
-                    strokeColor));
+                    strokeColor, lineType));
             }
             operations.clear();
             break;

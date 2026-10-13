@@ -51,9 +51,33 @@ void RenderTarget::fillSpan(int y, int x0, int x1, RGBA color)
     }
 }
 
+struct LineTypeCursor {
+    std::array<int, 4> pat;
+    int cursor;
+    int patIndex;
+
+    LineTypeCursor(LineType lineType) : cursor{0}, patIndex{0}
+    {
+        for (int i = 0; i < 4; i++) {
+            pat[i] = std::round(std::clamp(
+                lineType.pat[i], 2.0,
+                static_cast<double>(std::numeric_limits<int>::max())));
+        }
+    }
+
+    bool next()
+    {
+        if (cursor++ >= pat[patIndex]) {
+            patIndex = (patIndex + 1) % 4;
+            cursor = 1;
+        }
+        return patIndex % 2 == 0;
+    }
+};
+
 // World coordinate system
 void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
-                            RGBA color)
+                            RGBA color, LineType lineType)
 {
     auto start = camera.worldToCanvas(startWorld);
     auto end = camera.worldToCanvas(endWorld);
@@ -107,11 +131,12 @@ void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
     end = Point{start.x + t1 * dx, start.y + t1 * dy};
     start = Point{start.x + t0 * dx, start.y + t0 * dy};
 
-    drawLine(Pixel{start}, Pixel{end}, width, color);
+    drawLine(Pixel{start}, Pixel{end}, width, color, lineType);
 }
 
 // Canvas coordinate system
-void RenderTarget::drawLine(Pixel start, Pixel end, int width, RGBA color)
+void RenderTarget::drawLine(Pixel start, Pixel end, int width, RGBA color,
+                            LineType lineType)
 {
     auto dx = std::abs(start.x - end.x);
     auto dy = -std::abs(start.y - end.y);
@@ -120,12 +145,16 @@ void RenderTarget::drawLine(Pixel start, Pixel end, int width, RGBA color)
     int err = dx + dy;
     auto brushDir = dx > -dy ? &Pixel::y : &Pixel::x;
 
+    LineTypeCursor cursor{lineType.forWidth(width)};
     for (auto i = 0; i <= std::max(dx, -dy); ++i) {
-        for (auto j = -(width / 2); j < width - width / 2; ++j) {
-            auto p = start;
-            p.*brushDir += j;
-            setPixel(p, color);
+        if (cursor.next()) {
+            for (auto j = -(width / 2); j < width - width / 2; ++j) {
+                auto p = start;
+                p.*brushDir += j;
+                setPixel(p, color);
+            }
         }
+
         int e2 = err + err;
         if (e2 >= dy) {
             err += dy;
@@ -158,32 +187,36 @@ template <typename F> void bresenhamCircle(int radius, F brush)
 }
 
 void RenderTarget::drawCircleOutline(Point center, double radius, double width,
-                                     RGBA color)
+                                     RGBA color, LineType lineType)
 {
     drawCircleOutline(
         camera.worldToPixel(center), std::round(radius * camera.scale),
-        std::max(1, static_cast<int>(std::round(width * camera.scale))), color);
+        std::max(1, static_cast<int>(std::round(width * camera.scale))), color,
+        lineType);
 }
 
 void RenderTarget::drawCircleOutline(Pixel center, int radius, int width,
-                                     RGBA color)
+                                     RGBA color, LineType lineType)
 {
     if (radius <= width / 2) {
         fillCircle(center, radius, color);
         return;
     }
 
+    LineTypeCursor cursor{lineType.forWidth(width)};
     bresenhamCircle(radius, [&](Pixel p) {
-        for (auto j = -(width / 2); j < width - width / 2; ++j) {
-            setPixel(center + Pixel{p.x + j, p.y}, color);
-            setPixel(center + Pixel{-p.x + j, p.y}, color);
-            setPixel(center + Pixel{p.x + j, -p.y}, color);
-            setPixel(center + Pixel{-p.x + j, -p.y}, color);
+        if (cursor.next()) {
+            for (auto j = -(width / 2); j < width - width / 2; ++j) {
+                setPixel(center + Pixel{p.x + j, p.y}, color);
+                setPixel(center + Pixel{-p.x + j, p.y}, color);
+                setPixel(center + Pixel{p.x + j, -p.y}, color);
+                setPixel(center + Pixel{-p.x + j, -p.y}, color);
 
-            setPixel(center + Pixel{p.y, p.x + j}, color);
-            setPixel(center + Pixel{-p.y, p.x + j}, color);
-            setPixel(center + Pixel{p.y, -p.x + j}, color);
-            setPixel(center + Pixel{-p.y, -p.x + j}, color);
+                setPixel(center + Pixel{p.y, p.x + j}, color);
+                setPixel(center + Pixel{-p.y, p.x + j}, color);
+                setPixel(center + Pixel{p.y, -p.x + j}, color);
+                setPixel(center + Pixel{-p.y, -p.x + j}, color);
+            }
         }
     });
 }
@@ -220,27 +253,30 @@ void RenderTarget::fillCircle(Pixel center, int radius, RGBA color)
 }
 
 void RenderTarget::drawPolygonOutline(std::span<const Point> verts,
-                                      double width, RGBA color)
+                                      double width, RGBA color,
+                                      LineType lineType)
 {
     if (verts.size() <= 1) {
         return;
     }
     if (verts.size() == 2) {
-        drawLine(verts[0], verts[1], width, color);
+        drawLine(verts[0], verts[1], width, color, lineType);
     }
     auto view = verts | std::views::transform(
                             [this](Point p) { return camera.worldToPixel(p); });
     drawPolygonOutline(
         std::vector(view.begin(), view.end()),
-        std::max(1, static_cast<int>(std::round(width * camera.scale))), color);
+        std::max(1, static_cast<int>(std::round(width * camera.scale))), color,
+        lineType);
 }
 
 void RenderTarget::drawPolygonOutline(std::vector<Pixel> verts, int width,
-                                      RGBA color)
+                                      RGBA color, LineType lineType)
 {
     verts.push_back(verts[0]);
     for (std::size_t i = 0; i < verts.size(); i++) {
-        drawLine(verts[i], verts[(i + 1) % verts.size()], width, color);
+        drawLine(verts[i], verts[(i + 1) % verts.size()], width, color,
+                 lineType);
     }
 }
 
@@ -250,7 +286,7 @@ void RenderTarget::fillPolygon(std::span<const Point> verts, RGBA color)
         return;
     }
     if (verts.size() == 2) {
-        drawLine(verts[0], verts[1], 0, color);
+        drawLine(verts[0], verts[1], 0, color, LineType{});
         return;
     }
     auto view = verts | std::views::transform(

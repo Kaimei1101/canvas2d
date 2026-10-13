@@ -30,13 +30,13 @@ qt_add_qml_module(appGraphic
     SOURCES point.h point.cpp
     SOURCES drawable/drawable.h drawable/drawable.cpp
     SOURCES drawable/line.h drawable/line.cpp
-    SOURCES ui/toolbar.h ui/toolbar.cpp
     SOURCES ui/mainwindow.h ui/mainwindow.cpp
     SOURCES tool.h
     SOURCES rgba.h
     SOURCES drawable/circle.h drawable/circle.cpp
     SOURCES ui/colorselection.h ui/colorselection.cpp
     SOURCES drawable/polygon.h drawable/polygon.cpp
+    SOURCES linetype.h linetype.cpp
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

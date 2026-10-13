@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 
 #include <QActionGroup>
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QLabel>
 #include <QPushButton>
@@ -9,6 +10,7 @@
 #include <QToolButton>
 
 #include "colorselection.h"
+#include "linetype.h"
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow{parent}
 {
@@ -90,6 +92,26 @@ void MainWindow::setupToolBar()
     connect(widthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, [this](double w) { canvasWidget.lineWidth = w; });
     canvasWidget.lineWidth = 1;
+
+    tb->addSeparator();
+
+    lineTypePresets[1] = LineType{{6, 4, 6, 4}}.scale(devicePixelRatio());
+    lineTypePresets[2] = LineType{{12, 3, 1, 3}}.scale(devicePixelRatio());
+    lineTypePresets[3] = LineType{{1, 4, 1, 4}}.scale(devicePixelRatio());
+
+    auto *styleCombo = new QComboBox(this);
+    styleCombo->addItem("实线", 0);
+    styleCombo->addItem("虚线", 1);
+    styleCombo->addItem("中心线", 2);
+    styleCombo->addItem("点线", 3);
+    styleCombo->setCurrentIndex(0);
+    styleCombo->setToolTip("线型");
+    tb->addWidget(styleCombo);
+
+    connect(styleCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this, styleCombo](int i) {
+                canvasWidget.lineType = lineTypePresets[i];
+            });
 
     tb->addSeparator();
 

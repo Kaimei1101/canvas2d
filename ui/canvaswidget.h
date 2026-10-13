@@ -6,6 +6,7 @@
 #include <QWidget>
 
 #include "canvas.h"
+#include "linetype.h"
 #include "point.h"
 #include "rgba.h"
 #include "tool.h"
@@ -21,6 +22,7 @@ class CanvasWidget : public QWidget
 
   public:
     double lineWidth;
+    LineType lineType;
     bool stroke;
     bool fill;
     RGBA strokeColor;
