@@ -13,9 +13,9 @@ Canvas::Canvas(int width, int height) : target{width, height}, dirty{false}
     dirty = true;
 }
 
-int Canvas::getwidth() const { return target.getWidth(); }
+int Canvas::getWidth() const { return target.getWidth(); }
 
-int Canvas::getheight() const { return target.getHeight(); }
+int Canvas::getHeight() const { return target.getHeight(); }
 
 bool Canvas::isDirty() const { return dirty; }
 

@@ -1,14 +1,14 @@
 #include "camera.h"
 
-Camera::Camera() : center{0, 0}, scale{1} {}
+Camera::Camera() : anchor{0, 0}, scale{1} {}
 
 Pixel Camera::worldToPixel(Point p) const { return Pixel{worldToCanvas(p)}; }
 
-Point Camera::worldToCanvas(Point p) const { return (p - center) * scale; }
+Point Camera::worldToCanvas(Point p) const { return (p - anchor) * scale; }
 
-Point Camera::screenToWorld(Point p) const { return (p / scale) + center; }
+Point Camera::screenToWorld(Point p) const { return (p / scale) + anchor; }
 
-void Camera::move(Point screen_vec) { center = center + screen_vec / scale; }
+void Camera::move(Point screen_vec) { anchor = anchor + screen_vec / scale; }
 
 void Camera::zoomAt(Point c, double factor)
 {

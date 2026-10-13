@@ -6,11 +6,11 @@ PixelBuffer::PixelBuffer(int width, int height)
 {
 }
 
-int PixelBuffer::getwidth() const { return width; }
+int PixelBuffer::getWidth() const { return width; }
 
-int PixelBuffer::getheight() const { return height; }
+int PixelBuffer::getHeight() const { return height; }
 
-int PixelBuffer::getchannels() const { return channels; }
+int PixelBuffer::getChannels() const { return channels; }
 
 const std::uint8_t *PixelBuffer::as_raw() const
 {

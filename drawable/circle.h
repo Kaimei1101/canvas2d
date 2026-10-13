@@ -9,6 +9,7 @@ class Circle : public Drawable
 {
     Point center;
     double radius;
+
     double width;
     RGBA strokeColor;
     RGBA fillColor;

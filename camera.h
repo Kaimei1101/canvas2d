@@ -9,7 +9,7 @@
 class Camera
 {
   public:
-    Point center;
+    Point anchor;
     // Number of screen pixels per one unit of world length.
     double scale;
 

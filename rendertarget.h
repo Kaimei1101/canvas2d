@@ -21,6 +21,7 @@ class RenderTarget
     void resize(int width, int height);
     void clear();
     void setPixel(Pixel p, RGBA color);
+    void fillSpan(int y, int x0, int x1, RGBA color);
     void drawLine(Point start, Point end, double width, RGBA color);
     void drawCircleOutline(Point center, double radius, double width,
                            RGBA color);
@@ -30,6 +31,7 @@ class RenderTarget
     void fillPolygon(std::span<const Point> verts, RGBA color);
 
   private:
+    void setPixelUnchecked(Pixel p, RGBA color);
     void drawLine(Pixel start, Pixel end, int width, RGBA color);
     void drawCircleOutline(Pixel center, int radius, int width, RGBA color);
     void fillCircle(Pixel center, int radius, RGBA color);

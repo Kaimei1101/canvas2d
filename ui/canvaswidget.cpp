@@ -35,14 +35,17 @@ void CanvasWidget::paintEvent(QPaintEvent *e)
         }
         break;
     case Tool::Polygon:
+        if (operations.empty()) {
+            break;
+        }
         auto verts = operations;
         verts.push_back(canvas.getCamera().screenToWorld(lastPos));
         canvas.drawShape(Polygon{std::move(verts), fill, fillColor, stroke,
                                  lineWidth, strokeColor});
         break;
     }
-    QImage img{canvas.getRenderTarget().getPixels().as_raw(), canvas.getwidth(),
-               canvas.getheight(), QImage::Format_RGBA8888};
+    QImage img{canvas.getRenderTarget().getPixels().as_raw(), canvas.getWidth(),
+               canvas.getHeight(), QImage::Format_RGBA8888};
     img.setDevicePixelRatio(devicePixelRatio());
     QPainter{this}.drawImage(0, 0, img);
 }

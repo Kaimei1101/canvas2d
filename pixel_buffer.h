@@ -15,9 +15,9 @@ class PixelBuffer
 
   public:
     PixelBuffer(int width, int height);
-    int getwidth() const;
-    int getheight() const;
-    int getchannels() const;
+    int getWidth() const;
+    int getHeight() const;
+    int getChannels() const;
     const std::uint8_t *as_raw() const;
     void clear();
     RGBA &operator()(int x, int y);

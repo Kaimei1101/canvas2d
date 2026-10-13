@@ -1,13 +1,15 @@
+#include <algorithm>
 #include <cmath>
+#include <map>
 #include <ranges>
 
 #include "rendertarget.h"
 
 RenderTarget::RenderTarget(int width, int height) : pixels{width, height} {}
 
-int RenderTarget::getWidth() const { return pixels.getwidth(); }
+int RenderTarget::getWidth() const { return pixels.getWidth(); }
 
-int RenderTarget::getHeight() const { return pixels.getheight(); }
+int RenderTarget::getHeight() const { return pixels.getHeight(); }
 
 const PixelBuffer &RenderTarget::getPixels() const { return pixels; }
 
@@ -18,13 +20,35 @@ void RenderTarget::resize(int width, int height)
 
 void RenderTarget::clear() { pixels.clear(); }
 
+void RenderTarget::setPixelUnchecked(Pixel p, RGBA color)
+{
+    pixels(p.x, p.y) = color;
+}
+
 void RenderTarget::setPixel(Pixel p, RGBA color)
 {
     auto [x, y] = p;
     if (x < 0 || x >= getWidth() || y < 0 || y >= getHeight()) {
         return;
     }
-    pixels(x, y) = color;
+    setPixelUnchecked(p, color);
+}
+
+void RenderTarget::fillSpan(int y, int x0, int x1, RGBA color)
+{
+    if (y < 0 || y >= getHeight()) {
+        return;
+    }
+
+    x0 = std::max(x0, 0);
+    x1 = std::min(x1, getWidth() - 1);
+    if (x0 > x1) {
+        return;
+    }
+
+    for (int x = x0; x <= x1; ++x) {
+        setPixelUnchecked(Pixel{x, y}, color);
+    }
 }
 
 // World coordinate system
@@ -198,39 +222,96 @@ void RenderTarget::fillCircle(Pixel center, int radius, RGBA color)
 void RenderTarget::drawPolygonOutline(std::span<const Point> verts,
                                       double width, RGBA color)
 {
-    auto view = verts | std::views::transform([this](Point p) {
-                    return camera.worldToCanvas(p);
-                });
-    auto pixels = std::vector(view.begin(), view.end());
+    if (verts.size() <= 1) {
+        return;
+    }
+    if (verts.size() == 2) {
+        drawLine(verts[0], verts[1], width, color);
+    }
+    auto view = verts | std::views::transform(
+                            [this](Point p) { return camera.worldToPixel(p); });
     drawPolygonOutline(
-        pixels, std::max(1, static_cast<int>(std::round(width * camera.scale))),
-        color);
+        std::vector(view.begin(), view.end()),
+        std::max(1, static_cast<int>(std::round(width * camera.scale))), color);
 }
 
 void RenderTarget::drawPolygonOutline(std::vector<Pixel> verts, int width,
                                       RGBA color)
 {
+    verts.push_back(verts[0]);
+    for (std::size_t i = 0; i < verts.size(); i++) {
+        drawLine(verts[i], verts[(i + 1) % verts.size()], width, color);
+    }
 }
 
 void RenderTarget::fillPolygon(std::span<const Point> verts, RGBA color)
 {
-    auto view = verts | std::views::transform([this](Point p) {
-                    return camera.worldToCanvas(p);
-                });
-    auto pixels = std::vector(view.begin(), view.end());
-    fillPolygon(pixels, color);
+    if (verts.size() <= 1) {
+        return;
+    }
+    if (verts.size() == 2) {
+        drawLine(verts[0], verts[1], 0, color);
+        return;
+    }
+    auto view = verts | std::views::transform(
+                            [this](Point p) { return camera.worldToPixel(p); });
+    fillPolygon(std::vector(view.begin(), view.end()), color);
 }
-
-struct EdgeInfo {
-    int ymax;
-    int x;
-    int dx;
-};
 
 void RenderTarget::fillPolygon(std::vector<Pixel> verts, RGBA color)
 {
-    // std::vector<std::vector<EdgeInfo>> et(getHeight());
-    // for (auto p : verts) {
-    //     // et.
-    // }
+    struct EdgeInfo {
+        int yMax;
+        double x;
+        double dx;
+    };
+    std::map<int, std::vector<EdgeInfo>> et;
+    for (std::size_t i = 0; i < verts.size(); i++) {
+        auto start = verts[i];
+        auto end = verts[(i + 1) % verts.size()];
+        if (start.y == end.y) {
+            continue;
+        }
+        if (start.y > end.y) {
+            std::swap(start, end);
+        }
+        if (start.y >= getHeight() || end.y <= 0) {
+            continue;
+        }
+        double x = start.x;
+        double dx = static_cast<double>(end.x - x) / (end.y - start.y);
+        auto y = start.y;
+        if (start.y < 0) {
+            x += dx * -start.y;
+            y = 0;
+        }
+        et[y].push_back(EdgeInfo{end.y, x, dx});
+    }
+
+    std::vector<EdgeInfo> aet;
+    auto it = et.begin();
+    auto y = it->first;
+    do {
+        if (it != et.end() && it->first == y) {
+            aet.insert(aet.end(), it->second.begin(), it->second.end());
+            it++;
+        }
+        std::sort(
+            aet.begin(), aet.end(),
+            [](const EdgeInfo &a, const EdgeInfo &b) { return a.x < b.x; });
+
+        for (size_t i = 0; i + 1 < aet.size(); i += 2) {
+            fillSpan(y, static_cast<int>(std::ceil(aet[i].x)),
+                     static_cast<int>(std::floor(aet[i + 1].x)), color);
+        }
+
+        aet.erase(
+            std::remove_if(aet.begin(), aet.end(),
+                           [y](const EdgeInfo &e) { return e.yMax == y + 1; }),
+            aet.end());
+        for (auto &e : aet) {
+            e.x += e.dx;
+        }
+        y++;
+    } while (!aet.empty() && y < getHeight());
 }

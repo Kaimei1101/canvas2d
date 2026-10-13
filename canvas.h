@@ -17,15 +17,15 @@ class Canvas
   public:
     Canvas(int width, int height);
 
-    int getwidth() const;
-    int getheight() const;
+    int getWidth() const;
+    int getHeight() const;
     inline const std::vector<std::unique_ptr<Drawable>> &getShapes() const
     {
         return shapes;
     }
     inline const Camera &getCamera() const { return target.camera; }
     inline double getScale() const { return target.camera.scale; }
-    inline Point getCenter() const { return target.camera.center; }
+    inline Point getAnchor() const { return target.camera.anchor; }
     inline void move_camera(Point screen_vec)
     {
         if (screen_vec != Point{0, 0}) {
