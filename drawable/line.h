@@ -18,6 +18,19 @@ class Line : public Drawable
     Line(Point start, Point end, double width = 1, RGBA color = RGBA{0, 0, 0},
          LineType lineType = LineType{});
     void draw(RenderTarget &rt) const override;
+    void drawSelHighlight(RenderTarget &rt) const override;
+    bool hitTest(const Camera &camera, Point p) const override;
+    Point centroid() const override { return (start + end) / 2; }
+    bool isClosed() const override { return false; }
+    bool contains(Point) const override { return false; }
+    void transform(Transform t);
+    void setFill(RGBA) override {}
+
+    Point getStart() const { return start; }
+    Point getEnd() const { return end; }
+    double getWidth() const { return width; }
+    RGBA getColor() const { return color; }
+    LineType getLineType() const { return lineType; }
 };
 
 #endif // LINE_H

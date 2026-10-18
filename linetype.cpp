@@ -3,10 +3,8 @@
 #include <limits>
 
 LineType::LineType()
-    : pat{std::numeric_limits<double>::infinity(),
-          std::numeric_limits<double>::infinity(),
-          std::numeric_limits<double>::infinity(),
-          std::numeric_limits<double>::infinity()}
+    : pat{std::numeric_limits<double>::infinity(), 0,
+          std::numeric_limits<double>::infinity(), 0}
 {
 }
 

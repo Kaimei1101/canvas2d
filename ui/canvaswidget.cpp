@@ -1,31 +1,83 @@
 #include "canvaswidget.h"
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 
 #include "drawable/circle.h"
 #include "drawable/line.h"
 #include "drawable/polygon.h"
+#include "geometry.h"
+#include "transform.h"
+#include "transformdialog.h"
+#include <QMessageBox>
 
 CanvasWidget::CanvasWidget()
     : canvas{0, 0}, tool{Tool::Select}, lastPos{0, 0}, lineWidth{1},
-      stroke{true}, fill{false}, strokeColor{0, 0, 0}, fillColor{0, 0, 0}
+      stroke{true}, fill{false}, strokeColor{0, 0, 0}, fillColor{0, 0, 0},
+      arcPhase{ArcPhase::Idle}, arcCenter{0, 0}, arcRadius{0}, arcSecA{0, 0},
+      arcSecB{0, 0}, arcEp1{0, 0}, arcEp2{0, 0}
 {
     canvas.setScale(devicePixelRatio());
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
 }
 
-void CanvasWidget::paintEvent(QPaintEvent *e)
+// 割线 P = a + t·d 代入圆方程，解一元二次方程（t 取全直线，不限线段）
+// 有交点时写入 ep1、ep2 并返回 true
+static bool intersectCircle(Point a, Point b, Point center, double radius,
+                            Point &ep1, Point &ep2)
+{
+    const double dx = b.x - a.x;
+    const double dy = b.y - a.y;
+    const double fx = a.x - center.x;
+    const double fy = a.y - center.y;
+
+    const double qa = dx * dx + dy * dy;
+    if (qa < 1e-12) {
+        return false;
+    }
+    const double qb = 2.0 * (fx * dx + fy * dy);
+    const double qc = fx * fx + fy * fy - radius * radius;
+    const double disc = qb * qb - 4.0 * qa * qc;
+    if (disc < 0) {
+        return false;
+    }
+    const double sq = std::sqrt(disc);
+    const double t1 = (-qb - sq) / (2.0 * qa);
+    const double t2 = (-qb + sq) / (2.0 * qa);
+    ep1 = Point{a.x + t1 * dx, a.y + t1 * dy};
+    ep2 = Point{a.x + t2 * dx, a.y + t2 * dy};
+    return true;
+}
+
+// 辅助标记：以 p 为中心的红色小十字（参照 ArcTool 的交点标记）
+static void drawCross(Canvas &canvas, Point p)
+{
+    const RGBA red{220, 0, 0};
+    canvas.drawShape(
+        Line{Point{p.x - 3, p.y}, Point{p.x + 3, p.y}, 1, red, LineType{}});
+    canvas.drawShape(
+        Line{Point{p.x, p.y - 3}, Point{p.x, p.y + 3}, 1, red, LineType{}});
+}
+
+void CanvasWidget::paintEvent(QPaintEvent *)
 {
     canvas.redraw();
+    Point mouseWorld = canvas.getCamera().screenToWorld(lastPos);
+
+    // 选择工具：所有重心亮起；选中多个时显示组重心
+    if (tool == Tool::Select) {
+    }
+
     switch (tool) {
     case Tool::Line:
         if (!operations.empty()) {
-            canvas.drawShape(Line{operations.back(),
-                                  canvas.getCamera().screenToWorld(lastPos),
-                                  lineWidth, strokeColor, lineType});
+            canvas.drawShape(Line{operations.back(), mouseWorld, lineWidth,
+                                  strokeColor, lineType});
         }
         break;
+
     case Tool::Circle:
         if (!operations.empty()) {
             const auto &center = operations.back();
@@ -34,16 +86,93 @@ void CanvasWidget::paintEvent(QPaintEvent *e)
                        fillColor, stroke, lineWidth, strokeColor, lineType});
         }
         break;
-    case Tool::Polygon:
+
+    case Tool::Arc:
+        // 圆弧工具预览（参照 ArcTool::rebuildPreview）：
+        // 圆：用当前画笔，所见即所得；割线：灰色虚线；弧端点：红色十字
+        if (arcPhase != ArcPhase::Idle && arcRadius > 0) {
+            canvas.drawShape(Circle{arcCenter, arcRadius, fill, fillColor,
+                                    stroke, lineWidth, strokeColor, lineType});
+        }
+        if (arcPhase == ArcPhase::SecantDown ||
+            arcPhase == ArcPhase::PickSide) {
+            canvas.drawShape(Line{arcSecA, arcSecB, 1, RGBA{150, 150, 150},
+                                  LineType{{4, 4, 4, 4}}});
+        }
+        if (arcPhase == ArcPhase::PickSide) {
+            drawCross(canvas, arcEp1);
+            drawCross(canvas, arcEp2);
+        }
+        break;
+
+    case Tool::Polygon: {
         if (operations.empty()) {
             break;
         }
         auto verts = operations;
-        verts.push_back(canvas.getCamera().screenToWorld(lastPos));
+        verts.push_back(mouseWorld);
         canvas.drawShape(Polygon{std::move(verts), fill, fillColor, stroke,
                                  lineWidth, strokeColor, lineType});
         break;
     }
+
+    case Tool::Clip:
+        // 裁剪窗口预览：已确认顶点构成的凸多边形轮廓 + 鼠标悬停反馈
+        if (operations.empty()) {
+            break;
+        }
+        const RGBA guide{90, 90, 90};
+        const RGBA okColor{0, 130, 0};
+        const LineType dash{{5, 4, 5, 4}};
+        const std::size_t n = operations.size();
+
+        // 已确认边
+        for (std::size_t i = 0; i + 1 < n; ++i) {
+            canvas.drawShape(
+                Line{operations[i], operations[i + 1], 1, guide, LineType{}});
+        }
+        if (n >= 3) {
+            // 闭合边
+            canvas.drawShape(Line{operations.back(), operations.front(), 1,
+                                  guide, LineType{}});
+        }
+
+        // 悬停的新点
+        if (n == 1) {
+            canvas.drawShape(Line{operations[0], mouseWorld, 1, guide, dash});
+        } else if (n == 2) {
+            std::vector<Point> tri;
+            if (Geometry::makeTriangle(operations[0], operations[1], mouseWorld,
+                                       tri)) {
+                // 三角形合法：绿色虚线预览闭合轮廓
+                canvas.drawShape(
+                    Line{operations[0], mouseWorld, 1, okColor, dash});
+                canvas.drawShape(
+                    Line{operations[1], mouseWorld, 1, okColor, dash});
+            } else {
+                canvas.drawShape(
+                    Line{operations[1], mouseWorld, 1, guide, dash});
+            }
+        } else {
+            // n>=3：判定鼠标点对哪条边异侧
+            const int edge = Geometry::convexInsertEdge(operations, mouseWorld);
+            // 橡皮线：连到最近的待插入位置
+            if (edge >= 0) {
+                const Point &a = operations[edge];
+                const Point &b = operations[(edge + 1) % n];
+                // 未落下时以“这条边 + 新增端点”绘制三角形（绿色高亮）
+                canvas.drawShape(Line{a, mouseWorld, 2, okColor, dash});
+                canvas.drawShape(Line{b, mouseWorld, 2, okColor, dash});
+                canvas.drawShape(Line{a, b, 2, okColor, LineType{}});
+            } else {
+                // 不合法：只显示到重心的灰色提示线
+                const Point c = Geometry::centroid(operations);
+                canvas.drawShape(Line{c, mouseWorld, 1, guide, dash});
+            }
+        }
+        break;
+    }
+
     QImage img{canvas.getRenderTarget().getPixels().as_raw(), canvas.getWidth(),
                canvas.getHeight(), QImage::Format_RGBA8888};
     img.setDevicePixelRatio(devicePixelRatio());
@@ -63,16 +192,33 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *e)
         canvas.move_camera(lastPos - position);
         update();
     }
-    switch (tool) {
-    case Tool::Select:
-    case Tool::Line:
-    case Tool::Circle:
-    case Tool::Polygon:
-        if (!operations.empty()) {
+
+    if (tool == Tool::Arc) {
+        auto worldPos = canvas.getCamera().screenToWorld(position);
+        switch (arcPhase) {
+        case ArcPhase::CenterDown:
+            // 拖动中：更新半径预览
+            arcRadius = arcCenter.distance(worldPos);
             update();
+            break;
+        case ArcPhase::SecantDown:
+            // 拖动中：更新割线端点
+            arcSecB = worldPos;
+            update();
+            break;
+        case ArcPhase::RadiusDone:
+        case ArcPhase::PickSide:
+            // 静态预览，无需更新
+            break;
+        default:
+            break;
         }
-        break;
+    } else if (tool == Tool::Clip) {
+        update();
+    } else if (!operations.empty()) {
+        update();
     }
+
     lastPos = position;
     emit mouseWorldPos(canvas.getCamera().screenToWorld(position));
     e->accept();
@@ -80,69 +226,249 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *e)
 
 void CanvasWidget::mousePressEvent(QMouseEvent *e)
 {
-    auto worldPosition =
-        canvas.getCamera().screenToWorld(toPoint(e->position()));
+    auto worldPos = canvas.getCamera().screenToWorld(toPoint(e->position()));
+
+    if (tool == Tool::Line && e->button() == Qt::RightButton) {
+        if (!operations.empty()) {
+            canvas.addShape(std::make_unique<Line>(
+                operations.back(), worldPos, lineWidth, strokeColor, lineType));
+            operations.pop_back();
+            update();
+        }
+        e->accept();
+        return;
+    }
+
+    // 圆弧工具：右键随时取消
+    if (tool == Tool::Arc && e->button() == Qt::RightButton) {
+        if (arcPhase != ArcPhase::Idle) {
+            arcPhase = ArcPhase::Idle;
+            update();
+        }
+        e->accept();
+        return;
+    }
+
+    // 多边形工具：右键完成（≥3 点提交为正式多边形，不足 3 点取消）
+    if (tool == Tool::Polygon && e->button() == Qt::RightButton) {
+        operations.push_back(worldPos);
+        if (operations.size() >= 3) {
+            canvas.addShape(
+                std::make_unique<Polygon>(operations, fill, fillColor, stroke,
+                                          lineWidth, strokeColor, lineType));
+        }
+        operations.clear();
+        update();
+        e->accept();
+        return;
+    }
+
+    // 裁剪工具：右键完成窗口并执行裁剪（不足 3 点取消）
+    if (tool == Tool::Clip && e->button() == Qt::RightButton) {
+        if (operations.size() >= 3) {
+            canvas.applyClip(operations);
+        }
+        operations.clear();
+        update();
+        e->accept();
+        return;
+    }
+
+    if (tool == Tool::Arc && e->button() == Qt::LeftButton) {
+        switch (arcPhase) {
+        case ArcPhase::Idle:
+            // 第一次按下：确定圆心
+            arcCenter = worldPos;
+            arcRadius = 0;
+            arcPhase = ArcPhase::CenterDown;
+            update();
+            break;
+
+        case ArcPhase::RadiusDone:
+            // 第二次按下：开始画割线
+            arcSecA = worldPos;
+            arcSecB = worldPos;
+            arcPhase = ArcPhase::SecantDown;
+            update();
+            break;
+
+        case ArcPhase::PickSide: {
+            // 第三次点击：确定保留侧（相对 ep1→ep2 方向表达）
+            const double dx = arcEp2.x - arcEp1.x;
+            const double dy = arcEp2.y - arcEp1.y;
+            const double cross =
+                dx * (worldPos.y - arcEp1.y) - dy * (worldPos.x - arcEp1.x);
+            if (std::abs(cross) < 1e-6) {
+                // 点击恰在割线上，无效，保持选侧状态
+                break;
+            }
+            canvas.addShape(std::make_unique<Circle>(
+                arcCenter, arcRadius, arcEp1, arcEp2, cross > 0 ? 1 : -1, fill,
+                fillColor, stroke, lineWidth, strokeColor, lineType));
+            arcPhase = ArcPhase::Idle;
+            update();
+            break;
+        }
+
+        default:
+            break;
+        }
+        e->accept();
+        return;
+    }
+
     if (e->button() == Qt::LeftButton) {
         switch (tool) {
+        case Tool::Select: {
+            const auto &shapes = canvas.getShapes();
+            auto hitIdx = std::ssize(shapes) - 1;
+            for (; hitIdx >= 0; --hitIdx) {
+                if (shapes[hitIdx]->hitTest(canvas.getCamera(), worldPos)) {
+                    break;
+                }
+            }
+
+            // 切换选择
+            const bool ctrl = e->modifiers() & Qt::ControlModifier;
+            // 追加选择
+            const bool shift = e->modifiers() & Qt::ShiftModifier;
+            if (hitIdx >= 0) {
+                if (ctrl) {
+                    canvas.toggleSelection(hitIdx);
+                } else if (shift) {
+                    canvas.select(hitIdx);
+                } else {
+                    canvas.clearSelection();
+                    canvas.select(hitIdx);
+                }
+            } else {
+                if (!ctrl && !shift) {
+                    canvas.clearSelection();
+                }
+            }
+            update();
+            break;
+        }
         case Tool::Line:
             if (!operations.empty()) {
                 canvas.addShape(std::make_unique<Line>(operations.back(),
-                                                       worldPosition, lineWidth,
+                                                       worldPos, lineWidth,
                                                        strokeColor, lineType));
                 operations.pop_back();
                 update();
             }
-            operations.push_back(worldPosition);
+            operations.push_back(worldPos);
             break;
         case Tool::Circle:
             if (!operations.empty()) {
                 const auto &center = operations.back();
                 canvas.addShape(std::make_unique<Circle>(
-                    center, worldPosition, fill, fillColor, stroke, lineWidth,
+                    center, worldPos, fill, fillColor, stroke, lineWidth,
                     strokeColor, lineType));
                 operations.pop_back();
                 update();
             } else {
-                operations.push_back(worldPosition);
+                operations.push_back(worldPos);
             }
             break;
         case Tool::Polygon:
-            operations.push_back(worldPosition);
+            operations.push_back(worldPos);
             break;
-        }
-    } else if (e->button() == Qt::RightButton) {
-        switch (tool) {
-        case Tool::Line:
-            if (!operations.empty()) {
-                canvas.addShape(std::make_unique<Line>(operations.back(),
-                                                       worldPosition, lineWidth,
-                                                       strokeColor, lineType));
-                operations.pop_back();
-                update();
+        case Tool::Fill: {
+            // 实验二-2：点击判定是否落在合法封闭图形内，
+            // 若合法则把图形填充属性改为当前填充色；
+            // 多个图形重叠时填充最上层（数组末尾）的一个
+            const auto &shapes = canvas.getShapes();
+            for (auto it = shapes.rbegin(); it != shapes.rend(); ++it) {
+                if ((*it)->isClosed() && (*it)->contains(worldPos)) {
+                    (*it)->setFill(fillColor);
+                    canvas.markDirty();
+                    update();
+                    break;
+                }
             }
             break;
-        case Tool::Circle:
-            if (!operations.empty()) {
-                const auto &center = operations.back();
+        }
+        case Tool::Clip: {
+            // 实验二-4：凸多边形裁剪窗口的自动排序增量构造
+            const std::size_t n = operations.size();
+            if (n == 0) {
+                operations.push_back(worldPos);
+            } else if (n == 1) {
+                if (operations[0].distance(worldPos) >= 1e-6) {
+                    operations.push_back(worldPos);
+                }
+            } else if (n == 2) {
+                // 第三个点：非共线才形成三角形，自动确定绕序
+                std::vector<Point> tri;
+                if (Geometry::makeTriangle(operations[0], operations[1],
+                                           worldPos, tri)) {
+                    operations = std::move(tri);
+                }
+                // 共线：视为没有点击
+            } else {
+                // n>=3：有且仅有一条边与重心异侧才合法，
+                // 新点插入该边两端点之间；否则视为没有点击
+                const int edge =
+                    Geometry::convexInsertEdge(operations, worldPos);
+                if (edge >= 0) {
+                    operations.insert(operations.begin() + edge + 1, worldPos);
+                }
+            }
+            update();
+            break;
+        }
+        }
+    }
+
+    e->accept();
+}
+
+void CanvasWidget::mouseReleaseEvent(QMouseEvent *e)
+{
+    auto worldPos = canvas.getCamera().screenToWorld(toPoint(e->position()));
+
+    if (tool == Tool::Arc && e->button() == Qt::LeftButton) {
+        switch (arcPhase) {
+        case ArcPhase::CenterDown:
+            // 松开确定半径；半径过小视为无效
+            arcRadius = arcCenter.distance(worldPos);
+            if (arcRadius < 1) {
+                arcPhase = ArcPhase::Idle;
+            } else {
+                arcPhase = ArcPhase::RadiusDone;
+            }
+            update();
+            break;
+
+        case ArcPhase::SecantDown: {
+            arcSecB = worldPos;
+            if (arcSecB == arcSecA) {
+                // 未形成有效割线，回到画割线前的状态重新操作
+                arcPhase = ArcPhase::RadiusDone;
+                update();
+                break;
+            }
+            const bool hit = intersectCircle(arcSecA, arcSecB, arcCenter,
+                                             arcRadius, arcEp1, arcEp2);
+            if (!hit || arcEp1.distance(arcEp2) < 2.0) {
+                // 无交点（含相切退化）：创建整圆
                 canvas.addShape(std::make_unique<Circle>(
-                    center, worldPosition, fill, fillColor, stroke, lineWidth,
+                    arcCenter, arcRadius, fill, fillColor, stroke, lineWidth,
                     strokeColor, lineType));
-                operations.pop_back();
-                update();
+                arcPhase = ArcPhase::Idle;
             } else {
-                operations.push_back(worldPosition);
+                arcPhase = ArcPhase::PickSide;
             }
-            break;
-        case Tool::Polygon:
-            operations.push_back(worldPosition);
-            if (operations.size() > 2) {
-                canvas.addShape(std::make_unique<Polygon>(
-                    std::move(operations), fill, fillColor, stroke, lineWidth,
-                    strokeColor, lineType));
-            }
-            operations.clear();
+            update();
             break;
         }
+
+        default:
+            break;
+        }
+        e->accept();
+        return;
     }
 
     e->accept();
@@ -162,7 +488,6 @@ void CanvasWidget::wheelEvent(QWheelEvent *e)
 
     double base = e->modifiers() & Qt::ControlModifier ? 1.02 : 1.1;
     double factor = std::pow(base, delta);
-
     auto position = toPoint(e->position());
     canvas.zoomAt(position, factor);
     update();
@@ -173,10 +498,18 @@ void CanvasWidget::wheelEvent(QWheelEvent *e)
 
 void CanvasWidget::keyPressEvent(QKeyEvent *e)
 {
-    if (e->key() == Qt::Key_Escape && !operations.empty()) {
+    if (e->key() == Qt::Key_Escape) {
         operations.clear();
+        arcPhase = ArcPhase::Idle;
+        canvas.clearSelection();
         update();
+    } else if (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) {
+        canvas.removeShapes();
+        update();
+    } else {
+        return;
     }
+    e->accept();
 }
 
 Point CanvasWidget::toPoint(QPointF pos) const
@@ -185,4 +518,24 @@ Point CanvasWidget::toPoint(QPointF pos) const
         pos.x() * devicePixelRatio(),
         pos.y() * devicePixelRatio(),
     };
+}
+
+void CanvasWidget::showTransformDialog(bool)
+{
+    const auto &selected = canvas.getSelected();
+    if (selected.empty()) {
+        QMessageBox::warning(this, "提示", "未选中任何图形！");
+        return;
+    }
+
+    Point sum{0, 0};
+    for (size_t idx : selected) {
+        sum = sum + canvas.getShapes()[idx]->centroid();
+    }
+    auto initPivot = sum / static_cast<double>(selected.size());
+    TransformDialog dlg(initPivot, this);
+    if (dlg.exec() == QDialog::Accepted) {
+        canvas.applyTransform(dlg.transform());
+        update();
+    }
 }

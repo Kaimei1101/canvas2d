@@ -1,7 +1,9 @@
 #ifndef CANVAS_H
 #define CANVAS_H
 
+#include <cstddef>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include "drawable/drawable.h"
@@ -12,6 +14,7 @@ class Canvas
 {
     RenderTarget target;
     std::vector<std::unique_ptr<Drawable>> shapes;
+    std::unordered_set<std::size_t> selected;
     bool dirty;
 
   public:
@@ -52,11 +55,38 @@ class Canvas
         shapes.push_back(std::move(shape));
         dirty = true;
     }
+    // 删除指定下标的图形（裁剪替换时使用）
+    inline void removeShape(std::size_t index)
+    {
+        if (index < shapes.size()) {
+            shapes.erase(shapes.begin() + static_cast<std::ptrdiff_t>(index));
+            selected.clear();
+            dirty = true;
+        }
+    }
     bool isDirty() const;
     inline void markDirty() { dirty = true; }
     const RenderTarget &getRenderTarget() const;
     void resize(int width, int height);
     void redraw();
+    inline const std::unordered_set<std::size_t> &getSelected() const
+    {
+        return selected;
+    }
+    void select(std::size_t index);
+    void unselect(std::size_t index);
+    bool isSelected(std::size_t index) const
+    {
+        return selected.contains(index);
+    };
+    void toggleSelection(std::size_t index);
+    void clearSelection();
+    void drawCentroids();
+    void drawCentroidMark(Point p);
+    void drawGroupCentroidMark(Point p);
+    void applyTransform(Transform t);
+    void removeShapes();
+    void applyClip(std::span<const Point> clipPoints);
     inline void drawShape(const Drawable &shape)
     {
         shape.draw(target);

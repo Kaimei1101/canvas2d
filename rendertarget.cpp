@@ -22,7 +22,26 @@ void RenderTarget::clear() { pixels.clear(); }
 
 void RenderTarget::setPixelUnchecked(Pixel p, RGBA color)
 {
-    pixels(p.x, p.y) = color;
+    auto &dst = pixels(p.x, p.y);
+    if (color.a == 255) {
+        dst = color;
+        return;
+    }
+    if (color.a == 0) {
+        return;
+    }
+
+    // 混合公式（整数运算）：
+    // out = (src * srcA + dst * (255 - srcA)) / 255
+    // 加上 127 是为了实现四舍五入，减少精度损失
+    const uint32_t invA = 255 - color.a;
+
+    dst.r =
+        static_cast<uint8_t>((color.r * color.a + dst.r * invA + 126) / 255);
+    dst.g =
+        static_cast<uint8_t>((color.g * color.a + dst.g * invA + 127) / 255);
+    dst.b =
+        static_cast<uint8_t>((color.b * color.a + dst.b * invA + 127) / 255);
 }
 
 void RenderTarget::setPixel(Pixel p, RGBA color)
@@ -51,6 +70,23 @@ void RenderTarget::fillSpan(int y, int x0, int x1, RGBA color)
     }
 }
 
+void RenderTarget::fillSpanVertical(int x, int y0, int y1, RGBA color)
+{
+    if (x < 0 || x >= getWidth()) {
+        return;
+    }
+
+    y0 = std::max(y0, 0);
+    y1 = std::min(y1, getHeight() - 1);
+    if (y0 > y1) {
+        return;
+    }
+
+    for (int y = y0; y <= y1; ++y) {
+        setPixelUnchecked(Pixel{x, y}, color);
+    }
+}
+
 struct LineTypeCursor {
     std::array<int, 4> pat;
     int cursor;
@@ -75,7 +111,6 @@ struct LineTypeCursor {
     }
 };
 
-// World coordinate system
 void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
                             RGBA color, LineType lineType)
 {
@@ -86,9 +121,11 @@ void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
 
     // Adjust width for sloping line
     auto rawWidth = widthWorld * camera.scale;
+    double len = std::sqrt(dx * dx + dy * dy);
+    double widthFactor = len / std::max(std::abs(dx), std::abs(dy));
+    lineType = lineType.forWidth(std::max(1.0, std::round(rawWidth)))
+                   .scale(1 / widthFactor);
     if (rawWidth > 1.5) {
-        double len = std::sqrt(dx * dx + dy * dy);
-        double widthFactor = len / std::max(std::abs(dx), std::abs(dy));
         rawWidth *= widthFactor;
     }
     int width = std::max(1, static_cast<int>(std::round(rawWidth)));
@@ -134,24 +171,24 @@ void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
     drawLine(Pixel{start}, Pixel{end}, width, color, lineType);
 }
 
-// Canvas coordinate system
 void RenderTarget::drawLine(Pixel start, Pixel end, int width, RGBA color,
                             LineType lineType)
 {
-    auto dx = std::abs(start.x - end.x);
-    auto dy = -std::abs(start.y - end.y);
+    const auto dx = std::abs(start.x - end.x);
+    const auto dy = -std::abs(start.y - end.y);
     auto sx = start.x > end.x ? -1 : 1;
     auto sy = start.y > end.y ? -1 : 1;
     int err = dx + dy;
-    auto brushDir = dx > -dy ? &Pixel::y : &Pixel::x;
 
-    LineTypeCursor cursor{lineType.forWidth(width)};
+    LineTypeCursor cursor{lineType};
     for (auto i = 0; i <= std::max(dx, -dy); ++i) {
         if (cursor.next()) {
-            for (auto j = -(width / 2); j < width - width / 2; ++j) {
-                auto p = start;
-                p.*brushDir += j;
-                setPixel(p, color);
+            if (dx > -dy) {
+                fillSpanVertical(start.x, start.y - width / 2,
+                                 start.y + width - width / 2 - 1, color);
+            } else {
+                fillSpan(start.y, start.x - width / 2,
+                         start.x + width - width / 2 - 1, color);
             }
         }
 
@@ -206,17 +243,29 @@ void RenderTarget::drawCircleOutline(Pixel center, int radius, int width,
     LineTypeCursor cursor{lineType.forWidth(width)};
     bresenhamCircle(radius, [&](Pixel p) {
         if (cursor.next()) {
-            for (auto j = -(width / 2); j < width - width / 2; ++j) {
-                setPixel(center + Pixel{p.x + j, p.y}, color);
-                setPixel(center + Pixel{-p.x + j, p.y}, color);
-                setPixel(center + Pixel{p.x + j, -p.y}, color);
-                setPixel(center + Pixel{-p.x + j, -p.y}, color);
+            int halfW = width / 2;
+            int startOffset = -halfW;
+            int endOffset = width - halfW - 1;
 
-                setPixel(center + Pixel{p.y, p.x + j}, color);
-                setPixel(center + Pixel{-p.y, p.x + j}, color);
-                setPixel(center + Pixel{p.y, -p.x + j}, color);
-                setPixel(center + Pixel{-p.y, -p.x + j}, color);
-            }
+            int xLStart = center.x - p.x + startOffset;
+            int xLEnd = center.x - p.x + endOffset;
+            int xRStart = center.x + p.x + startOffset;
+            int xREnd = center.x + p.x + endOffset;
+
+            int yTStart = center.y - p.x + startOffset;
+            int yTEnd = center.y - p.x + endOffset;
+            int yBStart = center.y + p.x + startOffset;
+            int yBEnd = center.y + p.x + endOffset;
+
+            fillSpan(center.y + p.y, xRStart, xREnd, color);
+            fillSpan(center.y + p.y, xLStart, xLEnd, color);
+            fillSpan(center.y - p.y, xRStart, xREnd, color);
+            fillSpan(center.y - p.y, xLStart, xLEnd, color);
+
+            fillSpanVertical(center.x + p.y, yBStart, yBEnd, color);
+            fillSpanVertical(center.x - p.y, yBStart, yBEnd, color);
+            fillSpanVertical(center.x + p.y, yTStart, yTEnd, color);
+            fillSpanVertical(center.x - p.y, yTStart, yTEnd, color);
         }
     });
 }
@@ -234,21 +283,11 @@ void RenderTarget::fillCircle(Pixel center, int radius, RGBA color)
         return;
     }
 
-    auto drawSpan = [&](int y, int x0, int x1) {
-        if (y < 0 || y >= getHeight())
-            return;
-        x0 = std::max(x0, 0);
-        x1 = std::min(x1, getWidth() - 1);
-        for (int x = x0; x <= x1; ++x) {
-            setPixel(Pixel{x, y}, color);
-        }
-    };
-
     bresenhamCircle(radius, [&](Pixel p) {
-        drawSpan(center.y + p.y, center.x - p.x, center.x + p.x);
-        drawSpan(center.y - p.y, center.x - p.x, center.x + p.x);
-        drawSpan(center.y + p.x, center.x - p.y, center.x + p.y);
-        drawSpan(center.y - p.x, center.x - p.y, center.x + p.y);
+        fillSpan(center.y + p.y, center.x - p.x, center.x + p.x, color);
+        fillSpan(center.y - p.y, center.x - p.x, center.x + p.x, color);
+        fillSpan(center.y + p.x, center.x - p.y, center.x + p.y, color);
+        fillSpan(center.y - p.x, center.x - p.y, center.x + p.y, color);
     });
 }
 
@@ -292,6 +331,75 @@ void RenderTarget::fillPolygon(std::span<const Point> verts, RGBA color)
     auto view = verts | std::views::transform(
                             [this](Point p) { return camera.worldToPixel(p); });
     fillPolygon(std::vector(view.begin(), view.end()), color);
+}
+
+// 圆弧绘制（中点圆算法 + 叉积侧向过滤，参照 VectorCanvas2d Rasterizer::arc）
+// 割线 ep1→ep2 把圆分成两段弧，保留 side 侧：
+// cross(ep2−ep1, p−ep1) * side > 0；弧端点容差强制落笔补齐
+void RenderTarget::drawArc(Point center, double radius, Point ep1, Point ep2,
+                           int side, double width, RGBA color,
+                           LineType lineType)
+{
+    Pixel centerPixel = camera.worldToPixel(center);
+    int radiusPixel = std::round(radius * camera.scale);
+    int widthPixel =
+        std::max(1, static_cast<int>(std::round(width * camera.scale)));
+    if (radiusPixel <= 0) {
+        return;
+    }
+
+    Pixel ep1Pixel = camera.worldToPixel(ep1);
+    Pixel ep2Pixel = camera.worldToPixel(ep2);
+    const double dx = ep2Pixel.x - ep1Pixel.x;
+    const double dy = ep2Pixel.y - ep1Pixel.y;
+    const int keepSide = side >= 0 ? 1 : -1;
+
+    // 侧向判定：cross(ep2−ep1, p−ep1) * side > 0，端点附近强制保留
+    auto keep = [&](Pixel p) {
+        const double d1 = std::hypot(p.x - ep1Pixel.x, p.y - ep1Pixel.y);
+        const double d2 = std::hypot(p.x - ep2Pixel.x, p.y - ep2Pixel.y);
+        if (d1 <= 1.5 || d2 <= 1.5) {
+            return true; // 端点附近强制落笔
+        }
+        const double cross = dx * (p.y - ep1Pixel.y) - dy * (p.x - ep1Pixel.x);
+        return cross * keepSide > 0;
+    };
+
+    LineTypeCursor cursor{lineType.forWidth(widthPixel)};
+    int halfWidth = widthPixel / 2;
+    int startOffset = -halfWidth;
+    int endOffset = widthPixel - halfWidth - 1;
+    bresenhamCircle(radiusPixel, [&](Pixel p) {
+        if (!cursor.next()) {
+            return;
+        }
+        Pixel horizontalOctants[4] = {
+            centerPixel + Pixel{p.x, p.y},
+            centerPixel + Pixel{-p.x, p.y},
+            centerPixel + Pixel{p.x, -p.y},
+            centerPixel + Pixel{-p.x, -p.y},
+        };
+
+        Pixel verticalOctants[4] = {
+            centerPixel + Pixel{p.y, p.x},
+            centerPixel + Pixel{-p.y, p.x},
+            centerPixel + Pixel{p.y, -p.x},
+            centerPixel + Pixel{-p.y, -p.x},
+        };
+
+        for (const Pixel &q : horizontalOctants) {
+            if (keep(q)) {
+                fillSpan(q.y, q.x + startOffset, q.x + endOffset, color);
+            }
+        }
+
+        for (const Pixel &q : verticalOctants) {
+            if (keep(q)) {
+                fillSpanVertical(q.x, q.y + startOffset, q.y + endOffset,
+                                 color);
+            }
+        }
+    });
 }
 
 void RenderTarget::fillPolygon(std::vector<Pixel> verts, RGBA color)

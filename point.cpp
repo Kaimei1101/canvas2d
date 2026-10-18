@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "transform.h"
+
 Point::Point(double x, double y) : x{x}, y{y} {}
 
 Point::Point(Pixel p) : x{static_cast<double>(p.x)}, y{static_cast<double>(p.y)}
@@ -37,6 +39,13 @@ bool Point::operator!=(Point other) const { return !(*this == other); }
 
 double Point::distance(Point other) const
 {
-    auto vec = other - *this;
-    return std::sqrt(vec.x * vec.x + vec.y * vec.y);
+    return std::sqrt(distanceSqr(other));
 }
+
+double Point::distanceSqr(Point other) const
+{
+    auto vec = other - *this;
+    return vec.x * vec.x + vec.y * vec.y;
+}
+
+Point Point::transform(Transform t) const { return t.apply(*this); }

@@ -41,8 +41,10 @@ void MainWindow::setupToolBar()
     addTool(Tool::Select, true);
     addTool(Tool::Line);
     addTool(Tool::Circle);
+    addTool(Tool::Arc);
     addTool(Tool::Polygon);
     addTool(Tool::Fill);
+    addTool(Tool::Clip);
 
     tb->addSeparator();
 
@@ -128,6 +130,12 @@ void MainWindow::setupToolBar()
 
     connect(fillColorSel, &ColorSelection::colorChanged, this,
             [this](RGBA c) { canvasWidget.fillColor = c; });
+
+    tb->addSeparator();
+
+    auto *transformAct = tb->addAction("变换");
+    connect(transformAct, &QAction::triggered, &canvasWidget,
+            &CanvasWidget::showTransformDialog);
 }
 
 void MainWindow::setupStatusBar()

@@ -4,6 +4,7 @@
 #include "pixel.h"
 
 class Pixel;
+class Transform;
 
 class Point
 {
@@ -20,6 +21,8 @@ class Point
     bool operator==(Point other) const;
     bool operator!=(Point other) const;
     double distance(Point other) const;
+    double distanceSqr(Point other) const;
+    Point transform(Transform) const;
 };
 
 #endif // POINT_H
