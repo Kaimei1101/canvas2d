@@ -31,12 +31,13 @@ class Polygon : public Drawable
     Point centroid() const override;
     bool isClosed() const override { return verts.size() >= 3; }
     bool contains(Point p) const override;
-    void transform(Transform t);
+    void transform(Transform t) override;
     void setFill(RGBA color) override
     {
         fill = true;
         fillColor = color;
     }
+    AABB bounds() const override;
 
     const std::vector<Point> &getVerts() const { return verts; }
     bool isFilled() const { return fill; }

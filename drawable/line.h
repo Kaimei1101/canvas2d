@@ -23,8 +23,9 @@ class Line : public Drawable
     Point centroid() const override { return (start + end) / 2; }
     bool isClosed() const override { return false; }
     bool contains(Point) const override { return false; }
-    void transform(Transform t);
+    void transform(Transform t) override;
     void setFill(RGBA) override {}
+    AABB bounds() const override;
 
     Point getStart() const { return start; }
     Point getEnd() const { return end; }

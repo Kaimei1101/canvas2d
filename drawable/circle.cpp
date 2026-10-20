@@ -82,3 +82,26 @@ void Circle::transform(Transform t)
     radius *= scale;
     width *= scale;
 }
+
+AABB Circle::bounds() const
+{
+    if (isFullCircle()) {
+        return AABB{center - Point{radius, radius},
+                    center + Point{radius, radius}};
+    }
+
+    // 将圆弧的两个端点和整圆的四个轴向端点（如果在圆弧上）形成AABB
+    AABB bounds{arcData.ep1, arcData.ep2};
+    Point localCardinals[4] = {{center.x + radius, center.y},
+                               {center.x, center.y + radius},
+                               {center.x - radius, center.y},
+                               {center.x, center.y - radius}};
+
+    for (auto p : localCardinals) {
+        if (Geometry::cross(arcData.ep1, arcData.ep2, p) * arcData.side >= 0) {
+            bounds.expand(p);
+        }
+    }
+
+    return bounds;
+}

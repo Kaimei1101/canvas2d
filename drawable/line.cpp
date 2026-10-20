@@ -33,3 +33,5 @@ void Line::transform(Transform t)
     end = end.transform(t);
     width *= t.getScale();
 }
+
+AABB Line::bounds() const { return AABB{start, end}; }

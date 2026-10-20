@@ -20,6 +20,10 @@ class CanvasWidget : public QWidget
     // Store data of shapes which is being drawed
     std::vector<Point> operations;
 
+    enum class DragPhase { Idle, Pending, Dragging };
+    DragPhase leftDrag;
+    Point leftDragPos;
+
     // 圆弧绘制状态机（参照 VectorCanvas2d ArcTool）：
     //   第一次按下/松开：确定圆心、半径；
     //   第二次按下/松开：画出割线——无交点（含相切退化）创建整圆，

@@ -1,5 +1,7 @@
 #include "canvaswidget.h"
 
+#include <QApplication>
+#include <QMessageBox>
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -10,13 +12,14 @@
 #include "geometry.h"
 #include "transform.h"
 #include "transformdialog.h"
-#include <QMessageBox>
 
 CanvasWidget::CanvasWidget()
-    : canvas{0, 0}, tool{Tool::Select}, lastPos{0, 0}, lineWidth{1},
-      stroke{true}, fill{false}, strokeColor{0, 0, 0}, fillColor{0, 0, 0},
-      arcPhase{ArcPhase::Idle}, arcCenter{0, 0}, arcRadius{0}, arcSecA{0, 0},
-      arcSecB{0, 0}, arcEp1{0, 0}, arcEp2{0, 0}
+    : canvas{0, 0}, tool{Tool::Select}, lastPos{0, 0},
+      leftDrag{DragPhase::Idle}, leftDragPos{0, 0}, arcPhase{ArcPhase::Idle},
+      arcCenter{0, 0}, arcRadius{0}, arcSecA{0, 0}, arcSecB{0, 0}, arcEp1{0, 0},
+      arcEp2{0, 0}, lineWidth{1}, stroke{true}, fill{false},
+      strokeColor{0, 0, 0}, fillColor{0, 0, 0}
+
 {
     canvas.setScale(devicePixelRatio());
     setMouseTracking(true);
@@ -64,16 +67,27 @@ static void drawCross(Canvas &canvas, Point p)
 void CanvasWidget::paintEvent(QPaintEvent *)
 {
     canvas.redraw();
-    Point mouseWorld = canvas.getCamera().screenToWorld(lastPos);
+    Point worldPos = canvas.getCamera().screenToWorld(lastPos);
 
     // 选择工具：所有重心亮起；选中多个时显示组重心
     if (tool == Tool::Select) {
     }
 
     switch (tool) {
+    case Tool::Select:
+        if (leftDrag == DragPhase::Dragging) {
+            canvas.drawShape(Polygon{
+                std::vector<Point>{leftDragPos,
+                                   Point{leftDragPos.x, worldPos.y}, worldPos,
+                                   Point{worldPos.x, leftDragPos.y}},
+                true, RGBA{24, 144, 255, 30}, true, 1, RGBA{24, 144, 255},
+                LineType{}});
+        }
+        break;
+
     case Tool::Line:
         if (!operations.empty()) {
-            canvas.drawShape(Line{operations.back(), mouseWorld, lineWidth,
+            canvas.drawShape(Line{operations.back(), worldPos, lineWidth,
                                   strokeColor, lineType});
         }
         break;
@@ -81,9 +95,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     case Tool::Circle:
         if (!operations.empty()) {
             const auto &center = operations.back();
-            canvas.drawShape(
-                Circle{center, canvas.getCamera().screenToWorld(lastPos), fill,
-                       fillColor, stroke, lineWidth, strokeColor, lineType});
+            canvas.drawShape(Circle{center, worldPos, fill, fillColor, stroke,
+                                    lineWidth, strokeColor, lineType});
         }
         break;
 
@@ -110,7 +123,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
             break;
         }
         auto verts = operations;
-        verts.push_back(mouseWorld);
+        verts.push_back(worldPos);
         canvas.drawShape(Polygon{std::move(verts), fill, fillColor, stroke,
                                  lineWidth, strokeColor, lineType});
         break;
@@ -139,35 +152,34 @@ void CanvasWidget::paintEvent(QPaintEvent *)
 
         // 悬停的新点
         if (n == 1) {
-            canvas.drawShape(Line{operations[0], mouseWorld, 1, guide, dash});
+            canvas.drawShape(Line{operations[0], worldPos, 1, guide, dash});
         } else if (n == 2) {
             std::vector<Point> tri;
-            if (Geometry::makeTriangle(operations[0], operations[1], mouseWorld,
+            if (Geometry::makeTriangle(operations[0], operations[1], worldPos,
                                        tri)) {
                 // 三角形合法：绿色虚线预览闭合轮廓
                 canvas.drawShape(
-                    Line{operations[0], mouseWorld, 1, okColor, dash});
+                    Line{operations[0], worldPos, 1, okColor, dash});
                 canvas.drawShape(
-                    Line{operations[1], mouseWorld, 1, okColor, dash});
+                    Line{operations[1], worldPos, 1, okColor, dash});
             } else {
-                canvas.drawShape(
-                    Line{operations[1], mouseWorld, 1, guide, dash});
+                canvas.drawShape(Line{operations[1], worldPos, 1, guide, dash});
             }
         } else {
             // n>=3：判定鼠标点对哪条边异侧
-            const int edge = Geometry::convexInsertEdge(operations, mouseWorld);
+            const int edge = Geometry::convexInsertEdge(operations, worldPos);
             // 橡皮线：连到最近的待插入位置
             if (edge >= 0) {
                 const Point &a = operations[edge];
                 const Point &b = operations[(edge + 1) % n];
                 // 未落下时以“这条边 + 新增端点”绘制三角形（绿色高亮）
-                canvas.drawShape(Line{a, mouseWorld, 2, okColor, dash});
-                canvas.drawShape(Line{b, mouseWorld, 2, okColor, dash});
+                canvas.drawShape(Line{a, worldPos, 2, okColor, dash});
+                canvas.drawShape(Line{b, worldPos, 2, okColor, dash});
                 canvas.drawShape(Line{a, b, 2, okColor, LineType{}});
             } else {
                 // 不合法：只显示到重心的灰色提示线
                 const Point c = Geometry::centroid(operations);
-                canvas.drawShape(Line{c, mouseWorld, 1, guide, dash});
+                canvas.drawShape(Line{c, worldPos, 1, guide, dash});
             }
         }
         break;
@@ -192,8 +204,17 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *e)
         canvas.move_camera(lastPos - position);
         update();
     }
-
-    if (tool == Tool::Arc) {
+    if (tool == Tool::Select) {
+        if (leftDrag != DragPhase::Idle) {
+            auto startDragDis = QApplication::startDragDistance();
+            if (leftDrag == DragPhase::Pending &&
+                canvas.getCamera().screenToWorld(position).distanceSqr(
+                    leftDragPos) > startDragDis * startDragDis) {
+                leftDrag = DragPhase::Dragging;
+            }
+            update();
+        }
+    } else if (tool == Tool::Arc) {
         auto worldPos = canvas.getCamera().screenToWorld(position);
         switch (arcPhase) {
         case ArcPhase::CenterDown:
@@ -213,8 +234,6 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *e)
         default:
             break;
         }
-    } else if (tool == Tool::Clip) {
-        update();
     } else if (!operations.empty()) {
         update();
     }
@@ -320,33 +339,8 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
     if (e->button() == Qt::LeftButton) {
         switch (tool) {
         case Tool::Select: {
-            const auto &shapes = canvas.getShapes();
-            auto hitIdx = std::ssize(shapes) - 1;
-            for (; hitIdx >= 0; --hitIdx) {
-                if (shapes[hitIdx]->hitTest(canvas.getCamera(), worldPos)) {
-                    break;
-                }
-            }
-
-            // 切换选择
-            const bool ctrl = e->modifiers() & Qt::ControlModifier;
-            // 追加选择
-            const bool shift = e->modifiers() & Qt::ShiftModifier;
-            if (hitIdx >= 0) {
-                if (ctrl) {
-                    canvas.toggleSelection(hitIdx);
-                } else if (shift) {
-                    canvas.select(hitIdx);
-                } else {
-                    canvas.clearSelection();
-                    canvas.select(hitIdx);
-                }
-            } else {
-                if (!ctrl && !shift) {
-                    canvas.clearSelection();
-                }
-            }
-            update();
+            leftDrag = DragPhase::Pending;
+            leftDragPos = worldPos;
             break;
         }
         case Tool::Line:
@@ -427,6 +421,50 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
 void CanvasWidget::mouseReleaseEvent(QMouseEvent *e)
 {
     auto worldPos = canvas.getCamera().screenToWorld(toPoint(e->position()));
+
+    if (tool == Tool::Select && e->button() == Qt::LeftButton) {
+        // 切换选择
+        const bool ctrl = e->modifiers() & Qt::ControlModifier;
+        // 追加选择
+        const bool shift = e->modifiers() & Qt::ShiftModifier;
+
+        if (!shift && !ctrl) {
+            canvas.clearSelection();
+        }
+
+        auto select = [=, this](std::size_t i) {
+            if (i >= 0) {
+                if (ctrl) {
+                    canvas.toggleSelection(i);
+                } else {
+                    canvas.select(i);
+                }
+            }
+        };
+
+        if (leftDrag == DragPhase::Pending) {
+            const auto &shapes = canvas.getShapes();
+            auto hitIdx = std::ssize(shapes) - 1;
+            for (; hitIdx >= 0; --hitIdx) {
+                if (shapes[hitIdx]->hitTest(canvas.getCamera(), worldPos)) {
+                    break;
+                }
+            }
+            select(hitIdx);
+            update();
+        } else if (leftDrag == DragPhase::Dragging) {
+            AABB range{leftDragPos, worldPos};
+            for (std::size_t i = 0; i < canvas.getShapes().size(); ++i) {
+                if (range.contains(canvas.getShapes()[i]->bounds())) {
+                    select(i);
+                }
+            }
+            update();
+        }
+        leftDrag = DragPhase::Idle;
+        e->accept();
+        return;
+    }
 
     if (tool == Tool::Arc && e->button() == Qt::LeftButton) {
         switch (arcPhase) {

@@ -62,7 +62,7 @@ class Circle : public Drawable
     {
         return arcData.isFullCircle && center.distance(p) <= radius;
     }
-    void transform(Transform t);
+    void transform(Transform t) override;
     void setFill(RGBA color) override
     {
         if (arcData.isFullCircle) {
@@ -70,6 +70,7 @@ class Circle : public Drawable
             fillColor = color;
         }
     }
+    AABB bounds() const override;
 
     Point getCenter() const { return center; }
     double getRadius() const { return radius; }

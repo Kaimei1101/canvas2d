@@ -87,3 +87,19 @@ bool Polygon::contains(Point p) const
     }
     return inside;
 }
+
+AABB Polygon::bounds() const
+{
+
+    if (verts.empty()) {
+        return AABB{0, 0, 0, 0};
+    }
+
+    AABB bounds = AABB{verts[0], verts[0]};
+
+    for (size_t i = 1; i < verts.size(); ++i) {
+        bounds.expand(verts[i]);
+    }
+
+    return bounds;
+}

@@ -40,6 +40,7 @@ qt_add_qml_module(appGraphic
     SOURCES geometry.h geometry.cpp
     SOURCES transform.h transform.cpp
     SOURCES ui/transformdialog.h ui/transformdialog.cpp
+    SOURCES aabb.h aabb.cpp
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
