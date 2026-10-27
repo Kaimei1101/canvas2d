@@ -26,6 +26,8 @@ class Line : public Drawable
     void transform(Transform t) override;
     inline void setFill(RGBA) override {}
     AABB bounds() const override;
+    std::vector<std::unique_ptr<Drawable>>
+    clip(std::span<const Point> clipPoints);
 
     Point getStart() const { return start; }
     Point getEnd() const { return end; }

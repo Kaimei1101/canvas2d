@@ -71,6 +71,8 @@ class Circle : public Drawable
         }
     }
     AABB bounds() const override;
+    std::vector<std::unique_ptr<Drawable>>
+    clip(std::span<const Point> clipPoints);
 
     Point getCenter() const { return center; }
     double getRadius() const { return radius; }

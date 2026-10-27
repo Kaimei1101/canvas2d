@@ -38,6 +38,8 @@ class Polygon : public Drawable
         fillColor = color;
     }
     inline AABB bounds() const override { return AABB{verts}; }
+    std::vector<std::unique_ptr<Drawable>>
+    clip(std::span<const Point> clipPoints);
 
     const std::vector<Point> &getVerts() const { return verts; }
     bool isFilled() const { return fill; }

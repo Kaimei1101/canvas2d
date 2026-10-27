@@ -2,6 +2,8 @@
 
 #include <span>
 
+#include "line.h"
+
 void BSpline::calKnots()
 {
     int n = ctrlPts.size();
@@ -127,4 +129,21 @@ void BSpline::transform(Transform t)
         p = p.transform(t);
     }
     width *= t.getScale();
+}
+
+std::vector<std::unique_ptr<Drawable>>
+BSpline::clip(std::span<const Point> clipPoints)
+{
+    std::vector<std::unique_ptr<Drawable>> res;
+    forEachBSplineSegment(
+        ctrlPts, knots, degree, 50 * (ctrlPts.size() - 1),
+        [&](Point start, Point end) {
+            auto seg = Geometry::clipLineSegment(start, end, clipPoints);
+            if (seg && seg->first != seg->second) {
+                res.push_back(std::make_unique<Line>(seg->first, seg->second,
+                                                     width, color, lineType));
+            }
+            return true;
+        });
+    return res;
 }

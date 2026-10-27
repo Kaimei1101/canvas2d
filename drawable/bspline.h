@@ -36,6 +36,8 @@ class BSpline : public Drawable
     bool contains(Point p) const override { return false; }
     void transform(Transform t) override;
     void setFill(RGBA color) override {}
+    std::vector<std::unique_ptr<Drawable>>
+    clip(std::span<const Point> clipPoints);
 
     AABB bounds() const override { return AABB{ctrlPts}; }
 };

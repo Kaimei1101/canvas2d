@@ -35,3 +35,16 @@ void Line::transform(Transform t)
 }
 
 AABB Line::bounds() const { return AABB{start, end}; }
+
+std::vector<std::unique_ptr<Drawable>>
+Line::clip(std::span<const Point> clipPoints)
+{
+    auto seg = Geometry::clipLineSegment(start, end, clipPoints);
+    if (!seg && seg->first != seg->second) {
+        auto res = std::vector<std::unique_ptr<Drawable>>{};
+        res.push_back(std::make_unique<Line>(seg->first, seg->second, width,
+                                             color, lineType));
+        return res;
+    }
+    return {};
+}

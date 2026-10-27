@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "geometry.h"
+#include "polygon.h"
 
 Circle::Circle(Point center, double radius, bool fill, RGBA fillColor,
                bool stroke, double width, RGBA strokeColor, LineType lineType)
@@ -104,4 +105,35 @@ AABB Circle::bounds() const
     }
 
     return bounds;
+}
+
+std::vector<std::unique_ptr<Drawable>>
+Circle::clip(std::span<const Point> clipPoints)
+{
+    if (arcData.isFullCircle) {
+        auto verts = Geometry::circleToPolygon(center, radius);
+        std::vector<Point> result = Geometry::clipPolygon(verts, clipPoints);
+        if (result.size() <= 2) {
+            return {};
+        }
+        auto res = std::vector<std::unique_ptr<Drawable>>{};
+
+        res.push_back(std::make_unique<Polygon>(std::move(result), fill,
+                                                fillColor, stroke, width,
+                                                strokeColor, lineType));
+        return res;
+    }
+
+    std::vector<Geometry::ArcSeg> segs = Geometry::clipArc(
+        center, radius, arcData.ep1, arcData.ep2, arcData.side, clipPoints);
+    if (segs.empty()) {
+        return {};
+    }
+    std::vector<std::unique_ptr<Drawable>> res;
+    for (const auto &sg : segs) {
+        res.push_back(std::make_unique<Circle>(center, radius, sg.a, sg.b,
+                                               sg.side, fill, fillColor, stroke,
+                                               width, strokeColor, lineType));
+    }
+    return res;
 }

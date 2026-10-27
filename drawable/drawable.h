@@ -1,6 +1,8 @@
 #ifndef DRAWABLE_H
 #define DRAWABLE_H
 
+#include <memory>
+
 #include "aabb.h"
 #include "rendertarget.h"
 #include "rgba.h"
@@ -27,6 +29,8 @@ class Drawable
     // 将图形填充属性修改为指定颜色（非封闭图形为空操作）
     virtual void setFill(RGBA color) = 0;
     virtual AABB bounds() const = 0;
+    virtual std::vector<std::unique_ptr<Drawable>>
+    clip(std::span<const Point> clipPoints) = 0;
     virtual ~Drawable() = default;
 };
 

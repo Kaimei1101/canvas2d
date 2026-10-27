@@ -87,3 +87,17 @@ bool Polygon::contains(Point p) const
     }
     return inside;
 }
+
+std::vector<std::unique_ptr<Drawable>>
+Polygon::clip(std::span<const Point> clipPoints)
+{
+    std::vector<Point> result = Geometry::clipPolygon(verts, clipPoints);
+    if (result.size() <= 2) {
+        return {};
+    }
+    auto res = std::vector<std::unique_ptr<Drawable>>{};
+    res.push_back(std::make_unique<Polygon>(std::move(result), fill, fillColor,
+                                            stroke, width, strokeColor,
+                                            lineType));
+    return res;
+}
