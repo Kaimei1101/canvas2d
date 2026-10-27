@@ -2,6 +2,7 @@
 #define AABB_H
 
 #include <algorithm>
+#include <span>
 
 #include "point.h"
 
@@ -18,6 +19,8 @@ class AABB
     inline AABB(Point a, Point b)
         : min{std::min(a.x, b.x), std::min(a.y, b.y)},
           max{std::max(a.x, b.x), std::max(a.y, b.y)} {};
+
+    AABB(std::span<const Point> pts);
 
     inline bool intersect(AABB other)
     {

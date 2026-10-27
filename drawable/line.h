@@ -24,7 +24,7 @@ class Line : public Drawable
     bool isClosed() const override { return false; }
     bool contains(Point) const override { return false; }
     void transform(Transform t) override;
-    void setFill(RGBA) override {}
+    inline void setFill(RGBA) override {}
     AABB bounds() const override;
 
     Point getStart() const { return start; }

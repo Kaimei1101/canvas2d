@@ -7,6 +7,7 @@ enum class Tool {
     Circle,
     Arc,
     Polygon,
+    Curve,
     Fill,
     Clip,
 };
@@ -24,6 +25,8 @@ inline const char *toolName(Tool t)
         return "圆弧";
     case Tool::Polygon:
         return "多边形";
+    case Tool::Curve:
+        return "曲线";
     case Tool::Fill:
         return "填充";
     case Tool::Clip:

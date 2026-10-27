@@ -6,6 +6,7 @@
 #include <cmath>
 #include <memory>
 
+#include "drawable/bspline.h"
 #include "drawable/circle.h"
 #include "drawable/line.h"
 #include "drawable/polygon.h"
@@ -126,6 +127,29 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         verts.push_back(worldPos);
         canvas.drawShape(Polygon{std::move(verts), fill, fillColor, stroke,
                                  lineWidth, strokeColor, lineType});
+        break;
+    }
+
+    case Tool::Curve: {
+        if (operations.empty()) {
+            break;
+        }
+        auto pts = operations;
+        pts.push_back(worldPos);
+        if (pts.size() >= 2) {
+            for (auto p : pts) {
+                drawCross(canvas, p);
+            }
+        }
+        if (pts.size() == 2) {
+            canvas.drawShape(
+                Line{pts[0], pts[1], lineWidth, strokeColor, lineType});
+        } else if (pts.size() >= 3) {
+            auto degree = std::min(3, static_cast<int>(pts.size()) - 1);
+            canvas.drawShape(BSpline{std::move(pts), degree, lineWidth,
+                                     strokeColor, lineType});
+        }
+
         break;
     }
 
@@ -272,9 +296,28 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
     if (tool == Tool::Polygon && e->button() == Qt::RightButton) {
         operations.push_back(worldPos);
         if (operations.size() >= 3) {
-            canvas.addShape(
-                std::make_unique<Polygon>(operations, fill, fillColor, stroke,
-                                          lineWidth, strokeColor, lineType));
+            canvas.addShape(std::make_unique<Polygon>(
+                std::move(operations), fill, fillColor, stroke, lineWidth,
+                strokeColor, lineType));
+        }
+        operations.clear();
+        update();
+        e->accept();
+        return;
+    }
+
+    // 弧线工具：右键完成（=2 点退化为直线，≥3 点提交为B样条，否则取消）
+    if (tool == Tool::Curve && e->button() == Qt::RightButton) {
+        operations.push_back(worldPos);
+        if (operations.size() == 2) {
+            canvas.addShape(std::make_unique<Line>(operations[0], operations[1],
+                                                   lineWidth, strokeColor,
+                                                   lineType));
+        } else if (operations.size() >= 3) {
+            auto degree = std::min(3, static_cast<int>(operations.size()) - 1);
+            canvas.addShape(std::make_unique<BSpline>(std::move(operations),
+                                                      degree, lineWidth,
+                                                      strokeColor, lineType));
         }
         operations.clear();
         update();
@@ -366,6 +409,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
             }
             break;
         case Tool::Polygon:
+        case Tool::Curve:
             operations.push_back(worldPos);
             break;
         case Tool::Fill: {

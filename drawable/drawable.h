@@ -16,7 +16,7 @@ class Drawable
   public:
     virtual void draw(RenderTarget &rt) const = 0;
     virtual void drawSelHighlight(RenderTarget &rt) const = 0;
-    virtual bool hitTest(const Camera &rt, Point p) const = 0;
+    virtual bool hitTest(const Camera &camera, Point p) const = 0;
     // 图形重心（世界坐标），用于选择/变换的参考点
     virtual Point centroid() const = 0;
     // 是否为合法封闭图形（整圆、≥3 顶点的多边形）

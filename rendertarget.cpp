@@ -204,7 +204,7 @@ void RenderTarget::drawLine(Pixel start, Pixel end, int width, RGBA color,
     }
 }
 
-template <typename F> void bresenhamCircle(int radius, F brush)
+template <typename F> void bresenhamCircle(int radius, F &&brush)
 {
     int x = radius;
     int y = 0;

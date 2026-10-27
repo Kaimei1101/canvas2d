@@ -43,6 +43,7 @@ void MainWindow::setupToolBar()
     addTool(Tool::Circle);
     addTool(Tool::Arc);
     addTool(Tool::Polygon);
+    addTool(Tool::Curve);
     addTool(Tool::Fill);
     addTool(Tool::Clip);
 

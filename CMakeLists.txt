@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -41,6 +41,7 @@ qt_add_qml_module(appGraphic
     SOURCES transform.h transform.cpp
     SOURCES ui/transformdialog.h ui/transformdialog.cpp
     SOURCES aabb.h aabb.cpp
+    SOURCES drawable/bspline.h drawable/bspline.cpp
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
