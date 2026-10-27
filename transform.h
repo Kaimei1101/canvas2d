@@ -26,7 +26,8 @@ class Transform
   public:
     Transform() = default;
 
-    inline Transform(Point translate, double scale, double rotate)
+    inline explicit Transform(Point translate, double scale = 1,
+                              double rotate = 0)
         : Transform{std::cos(rotate), std::sin(rotate), translate, scale}
     {
     }

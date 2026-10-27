@@ -36,17 +36,19 @@ class RenderTarget
     void drawPolygonOutline(std::span<const Point> verts, double width,
                             RGBA color, LineType lineType);
     void fillPolygon(std::span<const Point> verts, RGBA color);
+    void drawCross(Point p, double width = 3, double radius = 5,
+                   RGBA color = RGBA{220, 0, 0});
 
   private:
     void setPixelUnchecked(Pixel p, RGBA color);
-    void drawLine(Pixel start, Pixel end, int width, RGBA color,
-                  LineType lineType);
-    void drawCircleOutline(Pixel center, int radius, int width, RGBA color,
-                           LineType lineType);
-    void fillCircle(Pixel center, int radius, RGBA color);
-    void drawPolygonOutline(std::vector<Pixel> verts, int width, RGBA color,
-                            LineType lineType);
-    void fillPolygon(std::vector<Pixel> verts, RGBA color);
+    void drawLineImpl(Pixel start, Pixel end, int width, RGBA color,
+                      LineType lineType);
+    void drawCircleOutlineImpl(Pixel center, int radius, int width, RGBA color,
+                               LineType lineType);
+    void fillCircleImpl(Pixel center, int radius, RGBA color);
+    void drawPolygonOutlineImpl(std::vector<Pixel> verts, int width, RGBA color,
+                                LineType lineType);
+    void fillPolygonImpl(std::vector<Pixel> verts, RGBA color);
 };
 
 #endif // RENDERTARGET_H

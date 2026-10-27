@@ -50,14 +50,7 @@ bool Polygon::hitTest(const Camera &camera, Point p) const
     return false;
 }
 
-Point Polygon::centroid() const
-{
-    Point sum{0, 0};
-    for (const auto &v : verts) {
-        sum = sum + v;
-    }
-    return verts.empty() ? sum : sum / static_cast<double>(verts.size());
-}
+Point Polygon::centroid() const { return Geometry::centroid(verts); }
 
 void Polygon::transform(Transform t)
 {

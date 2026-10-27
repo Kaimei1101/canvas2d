@@ -7,8 +7,6 @@
 
 class BSpline : public Drawable
 {
-  public:
-  private:
     std::vector<Point> ctrlPts;
     std::vector<double> knots;
     int degree;
@@ -28,7 +26,6 @@ class BSpline : public Drawable
     void calKnots();
 
     void draw(RenderTarget &rt) const override;
-
     void drawSelHighlight(RenderTarget &rt) const override;
     bool hitTest(const Camera &camera, Point p) const override;
     Point centroid() const override;
@@ -38,8 +35,7 @@ class BSpline : public Drawable
     void setFill(RGBA color) override {}
     std::vector<std::unique_ptr<Drawable>>
     clip(std::span<const Point> clipPoints);
-
-    AABB bounds() const override { return AABB{ctrlPts}; }
+    AABB bounds() const override;
 };
 
 #endif // BSPLINE_H

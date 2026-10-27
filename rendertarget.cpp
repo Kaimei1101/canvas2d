@@ -168,11 +168,11 @@ void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
     end = Point{start.x + t1 * dx, start.y + t1 * dy};
     start = Point{start.x + t0 * dx, start.y + t0 * dy};
 
-    drawLine(Pixel{start}, Pixel{end}, width, color, lineType);
+    drawLineImpl(Pixel{start}, Pixel{end}, width, color, lineType);
 }
 
-void RenderTarget::drawLine(Pixel start, Pixel end, int width, RGBA color,
-                            LineType lineType)
+void RenderTarget::drawLineImpl(Pixel start, Pixel end, int width, RGBA color,
+                                LineType lineType)
 {
     const auto dx = std::abs(start.x - end.x);
     const auto dy = -std::abs(start.y - end.y);
@@ -226,17 +226,17 @@ template <typename F> void bresenhamCircle(int radius, F &&brush)
 void RenderTarget::drawCircleOutline(Point center, double radius, double width,
                                      RGBA color, LineType lineType)
 {
-    drawCircleOutline(
+    drawCircleOutlineImpl(
         camera.worldToPixel(center), std::round(radius * camera.scale),
         std::max(1, static_cast<int>(std::round(width * camera.scale))), color,
         lineType);
 }
 
-void RenderTarget::drawCircleOutline(Pixel center, int radius, int width,
-                                     RGBA color, LineType lineType)
+void RenderTarget::drawCircleOutlineImpl(Pixel center, int radius, int width,
+                                         RGBA color, LineType lineType)
 {
     if (radius <= width / 2) {
-        fillCircle(center, radius, color);
+        fillCircleImpl(center, radius, color);
         return;
     }
 
@@ -272,11 +272,11 @@ void RenderTarget::drawCircleOutline(Pixel center, int radius, int width,
 
 void RenderTarget::fillCircle(Point center, double radius, RGBA color)
 {
-    fillCircle(camera.worldToPixel(center), std::round(radius * camera.scale),
-               color);
+    fillCircleImpl(camera.worldToPixel(center),
+                   std::round(radius * camera.scale), color);
 }
 
-void RenderTarget::fillCircle(Pixel center, int radius, RGBA color)
+void RenderTarget::fillCircleImpl(Pixel center, int radius, RGBA color)
 {
     if (radius <= 0) {
         setPixel(center, color);
@@ -303,19 +303,19 @@ void RenderTarget::drawPolygonOutline(std::span<const Point> verts,
     }
     auto view = verts | std::views::transform(
                             [this](Point p) { return camera.worldToPixel(p); });
-    drawPolygonOutline(
+    drawPolygonOutlineImpl(
         std::vector(view.begin(), view.end()),
         std::max(1, static_cast<int>(std::round(width * camera.scale))), color,
         lineType);
 }
 
-void RenderTarget::drawPolygonOutline(std::vector<Pixel> verts, int width,
-                                      RGBA color, LineType lineType)
+void RenderTarget::drawPolygonOutlineImpl(std::vector<Pixel> verts, int width,
+                                          RGBA color, LineType lineType)
 {
     verts.push_back(verts[0]);
     for (std::size_t i = 0; i < verts.size(); i++) {
-        drawLine(verts[i], verts[(i + 1) % verts.size()], width, color,
-                 lineType);
+        drawLineImpl(verts[i], verts[(i + 1) % verts.size()], width, color,
+                     lineType);
     }
 }
 
@@ -330,7 +330,7 @@ void RenderTarget::fillPolygon(std::span<const Point> verts, RGBA color)
     }
     auto view = verts | std::views::transform(
                             [this](Point p) { return camera.worldToPixel(p); });
-    fillPolygon(std::vector(view.begin(), view.end()), color);
+    fillPolygonImpl(std::vector(view.begin(), view.end()), color);
 }
 
 // 圆弧绘制（中点圆算法 + 叉积侧向过滤，参照 VectorCanvas2d Rasterizer::arc）
@@ -402,7 +402,7 @@ void RenderTarget::drawArc(Point center, double radius, Point ep1, Point ep2,
     });
 }
 
-void RenderTarget::fillPolygon(std::vector<Pixel> verts, RGBA color)
+void RenderTarget::fillPolygonImpl(std::vector<Pixel> verts, RGBA color)
 {
     struct EdgeInfo {
         int yMax;
@@ -458,4 +458,14 @@ void RenderTarget::fillPolygon(std::vector<Pixel> verts, RGBA color)
         }
         y++;
     } while (!aet.empty() && y < getHeight());
+}
+
+void RenderTarget::drawCross(Point p, double width, double radius, RGBA color)
+{
+    auto wRadius = radius / camera.scale;
+    auto wWidth = width / camera.scale;
+    drawLine(Point{p.x - wRadius, p.y}, Point{p.x + wRadius, p.y}, wWidth,
+             color, LineType{});
+    drawLine(Point{p.x, p.y - wRadius}, Point{p.x, p.y + wRadius}, wWidth,
+             color, LineType{});
 }

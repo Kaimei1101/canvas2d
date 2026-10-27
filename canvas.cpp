@@ -86,6 +86,15 @@ void Canvas::clearSelection()
     }
 }
 
+Point Canvas::selCentroid()
+{
+    Point sum{0, 0};
+    for (size_t idx : selected) {
+        sum = sum + shapes[idx]->centroid();
+    }
+    return sum / static_cast<double>(selected.size());
+}
+
 void Canvas::drawCentroids()
 {
     for (auto i : selected) {
@@ -93,11 +102,8 @@ void Canvas::drawCentroids()
     }
     // 组重心：选中图形重心的算术平均
     if (selected.size() >= 2) {
-        Point sum{0, 0};
-        for (size_t idx : selected) {
-            sum = sum + shapes[idx]->centroid();
-        }
-        drawGroupCentroidMark(sum / static_cast<double>(selected.size()));
+
+        drawGroupCentroidMark(selCentroid());
     }
 }
 
@@ -113,19 +119,11 @@ void Canvas::drawCentroidMark(Point p)
         Point{p.x + half, p.y + half},
         Point{p.x - half, p.y + half},
     };
-    drawShape(Polygon{verts, true, color, true, 1, color, LineType{}});
+    Polygon{verts, true, color, false, 0, color, LineType{}}.draw(target);
 }
 
 // 组重心标记：较大的红色十字 + 圆圈感（用加粗十字表示）
-void Canvas::drawGroupCentroidMark(Point p)
-{
-    const double r = 7.0 / getScale();
-    const RGBA color{220, 0, 0};
-    drawShape(
-        Line{Point{p.x - r, p.y}, Point{p.x + r, p.y}, 2, color, LineType{}});
-    drawShape(
-        Line{Point{p.x, p.y - r}, Point{p.x, p.y + r}, 2, color, LineType{}});
-}
+void Canvas::drawGroupCentroidMark(Point p) { target.drawCross(p, 6, 10); }
 
 void Canvas::applyTransform(Transform t)
 {

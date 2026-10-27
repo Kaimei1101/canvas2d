@@ -6,6 +6,7 @@
 #include <cmath>
 #include <memory>
 
+#include "drawable/beziercurve.h"
 #include "drawable/bspline.h"
 #include "drawable/circle.h"
 #include "drawable/line.h"
@@ -16,7 +17,8 @@
 
 CanvasWidget::CanvasWidget()
     : canvas{0, 0}, tool{Tool::Select}, lastPos{0, 0},
-      leftDrag{DragPhase::Idle}, leftDragPos{0, 0}, arcPhase{ArcPhase::Idle},
+      leftDrag{DragPhase::Idle}, leftDragPos{0, 0},
+      selDragtype{SelDragType::Select}, arcPhase{ArcPhase::Idle},
       arcCenter{0, 0}, arcRadius{0}, arcSecA{0, 0}, arcSecB{0, 0}, arcEp1{0, 0},
       arcEp2{0, 0}, lineWidth{1}, stroke{true}, fill{false},
       strokeColor{0, 0, 0}, fillColor{0, 0, 0}
@@ -58,11 +60,13 @@ static bool intersectCircle(Point a, Point b, Point center, double radius,
 // 辅助标记：以 p 为中心的红色小十字（参照 ArcTool 的交点标记）
 static void drawCross(Canvas &canvas, Point p)
 {
-    const RGBA red{220, 0, 0};
-    canvas.drawShape(
-        Line{Point{p.x - 3, p.y}, Point{p.x + 3, p.y}, 1, red, LineType{}});
-    canvas.drawShape(
-        Line{Point{p.x, p.y - 3}, Point{p.x, p.y + 3}, 1, red, LineType{}});
+    auto radius = 5.0 / canvas.getCamera().scale;
+    auto width = 3.0 / canvas.getCamera().scale;
+    RGBA red{220, 0, 0};
+    canvas.drawShape(Line{Point{p.x - radius, p.y}, Point{p.x + radius, p.y},
+                          width, red, LineType{}});
+    canvas.drawShape(Line{Point{p.x, p.y - radius}, Point{p.x, p.y + radius},
+                          width, red, LineType{}});
 }
 
 void CanvasWidget::paintEvent(QPaintEvent *)
@@ -76,12 +80,13 @@ void CanvasWidget::paintEvent(QPaintEvent *)
 
     switch (tool) {
     case Tool::Select:
-        if (leftDrag == DragPhase::Dragging) {
+        if (leftDrag == DragPhase::Dragging &&
+            selDragtype == SelDragType::Select) {
             canvas.drawShape(Polygon{
                 std::vector<Point>{leftDragPos,
                                    Point{leftDragPos.x, worldPos.y}, worldPos,
                                    Point{worldPos.x, leftDragPos.y}},
-                true, RGBA{24, 144, 255, 30}, true, 1, RGBA{24, 144, 255},
+                true, RGBA{24, 144, 255, 30}, true, 0, RGBA{24, 144, 255},
                 LineType{}});
         }
         break;
@@ -105,12 +110,12 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         // 圆弧工具预览（参照 ArcTool::rebuildPreview）：
         // 圆：用当前画笔，所见即所得；割线：灰色虚线；弧端点：红色十字
         if (arcPhase != ArcPhase::Idle && arcRadius > 0) {
-            canvas.drawShape(Circle{arcCenter, arcRadius, fill, fillColor,
+            canvas.drawShape(Circle{arcCenter, arcRadius, false, fillColor,
                                     stroke, lineWidth, strokeColor, lineType});
         }
         if (arcPhase == ArcPhase::SecantDown ||
             arcPhase == ArcPhase::PickSide) {
-            canvas.drawShape(Line{arcSecA, arcSecB, 1, RGBA{150, 150, 150},
+            canvas.drawShape(Line{arcSecA, arcSecB, 0, RGBA{150, 150, 150},
                                   LineType{{4, 4, 4, 4}}});
         }
         if (arcPhase == ArcPhase::PickSide) {
@@ -149,7 +154,27 @@ void CanvasWidget::paintEvent(QPaintEvent *)
             canvas.drawShape(BSpline{std::move(pts), degree, lineWidth,
                                      strokeColor, lineType});
         }
+        break;
+    }
 
+    case Tool::BezierCurve: {
+        if (operations.empty()) {
+            break;
+        }
+        auto pts = operations;
+        pts.push_back(worldPos);
+        if (pts.size() >= 2) {
+            for (auto p : pts) {
+                drawCross(canvas, p);
+            }
+        }
+        if (pts.size() == 2) {
+            canvas.drawShape(
+                Line{pts[0], pts[1], lineWidth, strokeColor, lineType});
+        } else if (pts.size() >= 3) {
+            canvas.drawShape(
+                BezierCurve{std::move(pts), lineWidth, strokeColor, lineType});
+        }
         break;
     }
 
@@ -166,7 +191,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         // 已确认边
         for (std::size_t i = 0; i + 1 < n; ++i) {
             canvas.drawShape(
-                Line{operations[i], operations[i + 1], 1, guide, LineType{}});
+                Line{operations[i], operations[i + 1], 0, guide, LineType{}});
         }
         if (n >= 3) {
             // 闭合边
@@ -176,18 +201,18 @@ void CanvasWidget::paintEvent(QPaintEvent *)
 
         // 悬停的新点
         if (n == 1) {
-            canvas.drawShape(Line{operations[0], worldPos, 1, guide, dash});
+            canvas.drawShape(Line{operations[0], worldPos, 0, guide, dash});
         } else if (n == 2) {
             std::vector<Point> tri;
             if (Geometry::makeTriangle(operations[0], operations[1], worldPos,
                                        tri)) {
                 // 三角形合法：绿色虚线预览闭合轮廓
                 canvas.drawShape(
-                    Line{operations[0], worldPos, 1, okColor, dash});
+                    Line{operations[0], worldPos, 0, okColor, dash});
                 canvas.drawShape(
-                    Line{operations[1], worldPos, 1, okColor, dash});
+                    Line{operations[1], worldPos, 0, okColor, dash});
             } else {
-                canvas.drawShape(Line{operations[1], worldPos, 1, guide, dash});
+                canvas.drawShape(Line{operations[1], worldPos, 0, guide, dash});
             }
         } else {
             // n>=3：判定鼠标点对哪条边异侧
@@ -197,13 +222,13 @@ void CanvasWidget::paintEvent(QPaintEvent *)
                 const Point &a = operations[edge];
                 const Point &b = operations[(edge + 1) % n];
                 // 未落下时以“这条边 + 新增端点”绘制三角形（绿色高亮）
-                canvas.drawShape(Line{a, worldPos, 2, okColor, dash});
-                canvas.drawShape(Line{b, worldPos, 2, okColor, dash});
-                canvas.drawShape(Line{a, b, 2, okColor, LineType{}});
+                canvas.drawShape(Line{a, worldPos, 0, okColor, dash});
+                canvas.drawShape(Line{b, worldPos, 0, okColor, dash});
+                canvas.drawShape(Line{a, b, 0, okColor, LineType{}});
             } else {
                 // 不合法：只显示到重心的灰色提示线
                 const Point c = Geometry::centroid(operations);
-                canvas.drawShape(Line{c, worldPos, 1, guide, dash});
+                canvas.drawShape(Line{c, worldPos, 0, guide, dash});
             }
         }
         break;
@@ -225,16 +250,36 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *e)
 {
     auto position = toPoint(e->position());
     if (e->buttons() & Qt::MiddleButton) {
-        canvas.move_camera(lastPos - position);
+        canvas.moveCamera(lastPos - position);
         update();
     }
+    auto worldPos = canvas.getCamera().screenToWorld(position);
     if (tool == Tool::Select) {
+        if (leftDrag == DragPhase::Idle) {
+            auto tol = 7.0 * devicePixelRatio() / canvas.getCamera().scale;
+            if (canvas.getSelected().empty() ||
+                canvas.selCentroid().distanceSqr(worldPos) > tol * tol) {
+                selDragtype = SelDragType::Select;
+                unsetCursor();
+            } else {
+                selDragtype = SelDragType::Move;
+                setCursor(Qt::SizeAllCursor);
+            }
+        }
         if (leftDrag != DragPhase::Idle) {
             auto startDragDis = QApplication::startDragDistance();
             if (leftDrag == DragPhase::Pending &&
-                canvas.getCamera().screenToWorld(position).distanceSqr(
-                    leftDragPos) > startDragDis * startDragDis) {
+                worldPos.distanceSqr(leftDragPos) >
+                    startDragDis * startDragDis) {
                 leftDrag = DragPhase::Dragging;
+                if (selDragtype == SelDragType::Move) {
+                    canvas.applyTransform(Transform{worldPos - leftDragPos});
+                }
+            }
+            if (leftDrag == DragPhase::Dragging &&
+                selDragtype == SelDragType::Move) {
+                canvas.applyTransform(Transform{
+                    worldPos - canvas.getCamera().screenToWorld(lastPos)});
             }
             update();
         }
@@ -306,7 +351,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
         return;
     }
 
-    // 弧线工具：右键完成（=2 点退化为直线，≥3 点提交为B样条，否则取消）
+    // 曲线工具：右键完成（=2 点退化为直线，≥3 点提交为B样条，否则取消）
     if (tool == Tool::Curve && e->button() == Qt::RightButton) {
         operations.push_back(worldPos);
         if (operations.size() == 2) {
@@ -318,6 +363,23 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
             canvas.addShape(std::make_unique<BSpline>(std::move(operations),
                                                       degree, lineWidth,
                                                       strokeColor, lineType));
+        }
+        operations.clear();
+        update();
+        e->accept();
+        return;
+    }
+
+    // 贝塞尔曲线工具：右键完成（=2 点退化为直线，≥3 点提交为B样条，否则取消）
+    if (tool == Tool::BezierCurve && e->button() == Qt::RightButton) {
+        operations.push_back(worldPos);
+        if (operations.size() == 2) {
+            canvas.addShape(std::make_unique<Line>(operations[0], operations[1],
+                                                   lineWidth, strokeColor,
+                                                   lineType));
+        } else if (operations.size() >= 3) {
+            canvas.addShape(std::make_unique<BezierCurve>(
+                std::move(operations), lineWidth, strokeColor, lineType));
         }
         operations.clear();
         update();
@@ -365,7 +427,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
                 break;
             }
             canvas.addShape(std::make_unique<Circle>(
-                arcCenter, arcRadius, arcEp1, arcEp2, cross > 0 ? 1 : -1, fill,
+                arcCenter, arcRadius, arcEp1, arcEp2, cross > 0 ? 1 : -1, false,
                 fillColor, stroke, lineWidth, strokeColor, lineType));
             arcPhase = ArcPhase::Idle;
             update();
@@ -411,6 +473,17 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
         case Tool::Polygon:
         case Tool::Curve:
             operations.push_back(worldPos);
+            break;
+        case Tool::BezierCurve:
+            operations.push_back(worldPos);
+            // Accept unlimited control points to demonstrate the difference
+            // between BSpline and BezierCurve
+            // if (operations.size() == 4) {
+            //     canvas.addShape(std::make_unique<BezierCurve>(
+            //         std::move(operations), lineWidth, strokeColor,
+            //         lineType));
+            //     operations.clear();
+            // }
             break;
         case Tool::Fill: {
             // 实验二-2：点击判定是否落在合法封闭图形内，
@@ -467,6 +540,12 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *e)
     auto worldPos = canvas.getCamera().screenToWorld(toPoint(e->position()));
 
     if (tool == Tool::Select && e->button() == Qt::LeftButton) {
+        if (selDragtype == SelDragType::Move) {
+            leftDrag = DragPhase::Idle;
+            e->accept();
+            return;
+        }
+
         // 切换选择
         const bool ctrl = e->modifiers() & Qt::ControlModifier;
         // 追加选择

@@ -20,15 +20,6 @@ double signedArea2(std::span<Point> p)
     return s;
 }
 
-Point centroid(std::span<const Point> p)
-{
-    Point s{0, 0};
-    for (const auto &q : p) {
-        s = s + q;
-    }
-    return p.empty() ? s : s / static_cast<double>(p.size());
-}
-
 double pointToSegmentDistanceSqr(Point p, Point a, Point b)
 {
     auto ab = b - a;
@@ -51,6 +42,15 @@ double pointToSegmentDistanceSqr(Point p, Point a, Point b)
     auto closest = a + ab * t;
     auto [diffX, diffY] = p - closest;
     return diffX * diffX + diffY * diffY;
+}
+
+Point centroid(std::span<const Point> p)
+{
+    Point s{0, 0};
+    for (const auto &q : p) {
+        s = s + q;
+    }
+    return p.empty() ? s : s / static_cast<double>(p.size());
 }
 
 int convexInsertEdge(const std::vector<Point> &pts, Point p)

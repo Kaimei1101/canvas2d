@@ -29,7 +29,7 @@ class Canvas
     inline const Camera &getCamera() const { return target.camera; }
     inline double getScale() const { return target.camera.scale; }
     inline Point getAnchor() const { return target.camera.anchor; }
-    inline void move_camera(Point screen_vec)
+    inline void moveCamera(Point screen_vec)
     {
         if (screen_vec != Point{0, 0}) {
             target.camera.move(screen_vec);
@@ -81,9 +81,7 @@ class Canvas
     };
     void toggleSelection(std::size_t index);
     void clearSelection();
-    void drawCentroids();
-    void drawCentroidMark(Point p);
-    void drawGroupCentroidMark(Point p);
+    Point selCentroid();
     void applyTransform(Transform t);
     void removeShapes();
     void applyClip(std::span<const Point> clipPoints);
@@ -92,6 +90,11 @@ class Canvas
         shape.draw(target);
         dirty = true;
     }
+
+  private:
+    void drawCentroids();
+    void drawCentroidMark(Point p);
+    void drawGroupCentroidMark(Point p);
 };
 
 #endif // CANVAS_H

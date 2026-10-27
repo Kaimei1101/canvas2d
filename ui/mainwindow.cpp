@@ -4,10 +4,12 @@
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QToolButton>
+#include <span>
 
 #include "colorselection.h"
 #include "linetype.h"
@@ -38,12 +40,46 @@ void MainWindow::setupToolBar()
                 [this, tool] { canvasWidget.setTool(tool); });
     };
 
+    auto addMenuTool = [&](Tool defaultTool,
+                           std::initializer_list<const Tool> subTools) {
+        auto *btn = new QToolButton(this);
+        btn->setPopupMode(QToolButton::MenuButtonPopup);
+        btn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        btn->setText(toolName(defaultTool));
+
+        auto *menu = new QMenu(btn);
+        QAction *defaultAct = nullptr;
+
+        auto addAct = [=, this](Tool tool) {
+            auto *act = new QAction(toolName(tool), menu);
+            act->setCheckable(true);
+            act->setData(static_cast<int>(tool));
+            menu->addAction(act);
+            group->addAction(act);
+
+            connect(act, &QAction::triggered, this,
+                    [=, this] { canvasWidget.setTool(tool); });
+
+            return act;
+        };
+
+        btn->setDefaultAction(addAct(defaultTool));
+        for (auto tool : subTools) {
+            addAct(tool);
+        }
+
+        btn->setMenu(menu);
+        tb->addWidget(btn);
+    };
+
     addTool(Tool::Select, true);
     addTool(Tool::Line);
     addTool(Tool::Circle);
     addTool(Tool::Arc);
     addTool(Tool::Polygon);
-    addTool(Tool::Curve);
+
+    addMenuTool(Tool::Curve, {Tool::BezierCurve});
+
     addTool(Tool::Fill);
     addTool(Tool::Clip);
 

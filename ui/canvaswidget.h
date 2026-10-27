@@ -23,6 +23,8 @@ class CanvasWidget : public QWidget
     enum class DragPhase { Idle, Pending, Dragging };
     DragPhase leftDrag;
     Point leftDragPos;
+    enum class SelDragType { Select, Move };
+    SelDragType selDragtype;
 
     // 圆弧绘制状态机（参照 VectorCanvas2d ArcTool）：
     //   第一次按下/松开：确定圆心、半径；
@@ -46,7 +48,7 @@ class CanvasWidget : public QWidget
 
     CanvasWidget();
 
-    inline void setTool(Tool tool)
+    void setTool(Tool tool)
     {
         this->tool = tool;
         operations.clear();
