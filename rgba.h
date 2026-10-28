@@ -16,6 +16,8 @@ class RGBA
         : r{r}, g{g}, b{b}, a{a}
     {
     }
+
+    bool operator==(const RGBA &) const = default;
 };
 
 #endif // RGBA_H

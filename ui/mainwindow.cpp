@@ -183,6 +183,11 @@ void MainWindow::setupStatusBar()
     statusBar()->addPermanentWidget(posLabel);
     statusBar()->addPermanentWidget(scaleLabel);
 
+    connect(&canvasWidget, &CanvasWidget::showStatusMessage, this,
+            [this](const QString &msg, int timeout) {
+                statusBar()->showMessage(msg, timeout);
+            });
+
     connect(&canvasWidget, &CanvasWidget::mouseWorldPos, posLabel,
             [=](Point p) {
                 posLabel->setText(

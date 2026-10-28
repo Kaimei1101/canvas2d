@@ -30,13 +30,6 @@ Point Point::operator/(double scale) const
     return Point{x / scale, y / scale};
 }
 
-bool Point::operator==(Point other) const
-{
-    return x == other.x && y == other.y;
-}
-
-bool Point::operator!=(Point other) const { return !(*this == other); }
-
 double Point::distance(Point other) const
 {
     return std::sqrt(distanceSqr(other));

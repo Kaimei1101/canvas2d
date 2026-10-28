@@ -85,6 +85,7 @@ class Canvas
     void applyTransform(Transform t);
     void removeShapes();
     void applyClip(std::span<const Point> clipPoints);
+    bool applyFill(Point worldPos, RGBA fillColor);
     inline void drawShape(const Drawable &shape)
     {
         shape.draw(target);

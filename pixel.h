@@ -14,12 +14,11 @@ class Pixel
     int x;
     int y;
 
-    Pixel(int x, int y);
+    constexpr Pixel(int x, int y) : x{x}, y{y} {}
     explicit Pixel(Point p);
     Pixel operator+(Pixel other) const;
     Pixel operator-(Pixel other) const;
-    bool operator==(Pixel otehr) const;
-    bool operator!=(Pixel other) const;
+    bool operator==(const Pixel &otehr) const = default;
 };
 
 #endif // PIXEL_H

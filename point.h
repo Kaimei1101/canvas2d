@@ -18,8 +18,7 @@ class Point
     Point operator-(Point other) const;
     Point operator*(double scale) const;
     Point operator/(double scale) const;
-    bool operator==(Point other) const;
-    bool operator!=(Point other) const;
+    bool operator==(const Point &other) const = default;
     double distance(Point other) const;
     double distanceSqr(Point other) const;
     Point transform(Transform) const;

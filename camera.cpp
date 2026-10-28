@@ -4,6 +4,11 @@ Camera::Camera() : anchor{0, 0}, scale{1} {}
 
 Pixel Camera::worldToPixel(Point p) const { return Pixel{worldToCanvas(p)}; }
 
+Point Camera::pixelToWorld(Pixel p) const
+{
+    return (Point{p} / scale) + anchor;
+}
+
 Point Camera::worldToCanvas(Point p) const { return (p - anchor) * scale; }
 
 Point Camera::screenToWorld(Point p) const { return (p / scale) + anchor; }

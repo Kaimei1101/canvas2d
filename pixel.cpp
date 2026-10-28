@@ -5,8 +5,6 @@
 
 #include "pixel.h"
 
-Pixel::Pixel(int x, int y) : x{x}, y{y} {}
-
 Pixel::Pixel(Point p)
     : x{static_cast<int>(std::round(
           std::clamp(p.x, static_cast<double>(std::numeric_limits<int>::min()),
@@ -26,10 +24,3 @@ Pixel Pixel::operator-(Pixel other) const
 {
     return Pixel{x - other.x, y - other.y};
 }
-
-bool Pixel::operator==(Pixel other) const
-{
-    return x == other.x && y == other.y;
-}
-
-bool Pixel::operator!=(Pixel other) const { return !(*this == other); }

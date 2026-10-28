@@ -2,23 +2,36 @@
 #include <cmath>
 #include <map>
 #include <ranges>
+#include <stack>
 
 #include "rendertarget.h"
 
-RenderTarget::RenderTarget(int width, int height) : pixels{width, height} {}
+RenderTarget::RenderTarget(int width, int height)
+    : pixels{width, height, RGBA{255, 255, 255}}
+{
+}
 
 int RenderTarget::getWidth() const { return pixels.getWidth(); }
 
 int RenderTarget::getHeight() const { return pixels.getHeight(); }
 
-const PixelBuffer &RenderTarget::getPixels() const { return pixels; }
+const RGBABuffer &RenderTarget::getPixels() const { return pixels; }
 
 void RenderTarget::resize(int width, int height)
 {
-    pixels = PixelBuffer{width, height};
+    pixels = RGBABuffer{width, height, RGBA{255, 255, 255}};
 }
 
-void RenderTarget::clear() { pixels.clear(); }
+void RenderTarget::clear() { pixels.clear(RGBA{255, 255, 255}); }
+
+std::optional<RGBA> RenderTarget::getPixel(Pixel p)
+{
+    auto [x, y] = p;
+    if (x < 0 || x >= getWidth() || y < 0 || y >= getHeight()) {
+        return std::nullopt;
+    }
+    return std::make_optional(pixels(x, y));
+}
 
 void RenderTarget::setPixelUnchecked(Pixel p, RGBA color)
 {
@@ -333,6 +346,66 @@ void RenderTarget::fillPolygon(std::span<const Point> verts, RGBA color)
     fillPolygonImpl(std::vector(view.begin(), view.end()), color);
 }
 
+void RenderTarget::fillPolygonImpl(std::vector<Pixel> verts, RGBA color)
+{
+    struct EdgeInfo {
+        int yMax;
+        double x;
+        double dx;
+    };
+    std::map<int, std::vector<EdgeInfo>> et;
+    int yMax = 0;
+    for (std::size_t i = 0; i < verts.size(); i++) {
+        auto start = verts[i];
+        auto end = verts[(i + 1) % verts.size()];
+        if (start.y == end.y) {
+            continue;
+        }
+        if (start.y > end.y) {
+            std::swap(start, end);
+        }
+        if (start.y >= getHeight() || end.y <= 0) {
+            continue;
+        }
+        double x = start.x;
+        double dx = static_cast<double>(end.x - x) / (end.y - start.y);
+        auto y = start.y;
+        if (start.y < 0) {
+            x += dx * -start.y;
+            y = 0;
+        }
+        yMax = std::max(yMax, end.y);
+        et[y].push_back(EdgeInfo{end.y, x, dx});
+    }
+
+    yMax = std::min(yMax, getHeight());
+    std::vector<EdgeInfo> aet;
+    auto it = et.begin();
+    auto y = it->first;
+    do {
+        if (it != et.end() && it->first == y) {
+            aet.insert(aet.end(), it->second.begin(), it->second.end());
+            it++;
+        }
+        std::sort(
+            aet.begin(), aet.end(),
+            [](const EdgeInfo &a, const EdgeInfo &b) { return a.x < b.x; });
+        for (size_t i = 0; i + 1 < aet.size(); i += 2) {
+            fillSpan(y, static_cast<int>(std::round(aet[i].x)),
+                     static_cast<int>(std::round(aet[i + 1].x)), color);
+        }
+
+        aet.erase(
+            std::remove_if(aet.begin(), aet.end(),
+                           [y](const EdgeInfo &e) { return e.yMax == y + 1; }),
+            aet.end());
+        for (auto &e : aet) {
+            e.x += e.dx;
+        }
+        y++;
+    } while (y <= yMax);
+}
+
 // 圆弧绘制（中点圆算法 + 叉积侧向过滤，参照 VectorCanvas2d Rasterizer::arc）
 // 割线 ep1→ep2 把圆分成两段弧，保留 side 侧：
 // cross(ep2−ep1, p−ep1) * side > 0；弧端点容差强制落笔补齐
@@ -402,64 +475,6 @@ void RenderTarget::drawArc(Point center, double radius, Point ep1, Point ep2,
     });
 }
 
-void RenderTarget::fillPolygonImpl(std::vector<Pixel> verts, RGBA color)
-{
-    struct EdgeInfo {
-        int yMax;
-        double x;
-        double dx;
-    };
-    std::map<int, std::vector<EdgeInfo>> et;
-    for (std::size_t i = 0; i < verts.size(); i++) {
-        auto start = verts[i];
-        auto end = verts[(i + 1) % verts.size()];
-        if (start.y == end.y) {
-            continue;
-        }
-        if (start.y > end.y) {
-            std::swap(start, end);
-        }
-        if (start.y >= getHeight() || end.y <= 0) {
-            continue;
-        }
-        double x = start.x;
-        double dx = static_cast<double>(end.x - x) / (end.y - start.y);
-        auto y = start.y;
-        if (start.y < 0) {
-            x += dx * -start.y;
-            y = 0;
-        }
-        et[y].push_back(EdgeInfo{end.y, x, dx});
-    }
-
-    std::vector<EdgeInfo> aet;
-    auto it = et.begin();
-    auto y = it->first;
-    do {
-        if (it != et.end() && it->first == y) {
-            aet.insert(aet.end(), it->second.begin(), it->second.end());
-            it++;
-        }
-        std::sort(
-            aet.begin(), aet.end(),
-            [](const EdgeInfo &a, const EdgeInfo &b) { return a.x < b.x; });
-
-        for (size_t i = 0; i + 1 < aet.size(); i += 2) {
-            fillSpan(y, static_cast<int>(std::ceil(aet[i].x)),
-                     static_cast<int>(std::floor(aet[i + 1].x)), color);
-        }
-
-        aet.erase(
-            std::remove_if(aet.begin(), aet.end(),
-                           [y](const EdgeInfo &e) { return e.yMax == y + 1; }),
-            aet.end());
-        for (auto &e : aet) {
-            e.x += e.dx;
-        }
-        y++;
-    } while (!aet.empty() && y < getHeight());
-}
-
 void RenderTarget::drawCross(Point p, double width, double radius, RGBA color)
 {
     auto wRadius = radius / camera.scale;
@@ -468,4 +483,85 @@ void RenderTarget::drawCross(Point p, double width, double radius, RGBA color)
              color, LineType{});
     drawLine(Point{p.x, p.y - wRadius}, Point{p.x, p.y + wRadius}, wWidth,
              color, LineType{});
+}
+
+std::optional<MaskBuffer> RenderTarget::generateFillMask(Pixel seed)
+{
+    int w = getWidth();
+    int h = getHeight();
+    MaskBuffer mask{w, h, 0};
+
+    auto targetColor = getPixel(seed);
+    if (!targetColor.has_value()) {
+        return std::nullopt;
+    }
+
+    std::stack<Pixel> stack;
+    stack.push(seed);
+
+    auto shouldFill = [&](int x, int y) {
+        return mask(x, y) == 0 && pixels(x, y) == targetColor;
+    };
+
+    while (!stack.empty()) {
+        auto [x, y] = stack.top();
+        stack.pop();
+
+        if (!shouldFill(x, y)) {
+            continue;
+        }
+
+        if (y == 0 || y == h - 1) {
+            return std::nullopt;
+        }
+
+        int xL = x - 1;
+        while (xL >= 0 && shouldFill(xL, y)) {
+            xL--;
+        }
+        if (xL == -1) {
+            return std::nullopt;
+        }
+        xL++;
+
+        int xR = x + 1;
+        while (xR < w && shouldFill(xR, y)) {
+            xR++;
+        }
+        if (xR == w) {
+            return std::nullopt;
+        }
+        xR--;
+
+        for (int i = xL; i <= xR; ++i) {
+            mask(i, y) = 1;
+        }
+
+        auto checkRow = [&](int checkY) {
+            bool inSpan = false;
+            for (int i = xL; i <= xR; ++i) {
+                if (shouldFill(i, checkY)) {
+                    if (!inSpan) {
+                        stack.push({i, checkY});
+                        inSpan = true;
+                    }
+                } else {
+                    inSpan = false;
+                }
+            }
+        };
+        checkRow(y - 1);
+        checkRow(y + 1);
+    }
+
+    // 防止多边形扫描转换时由于y的前闭后开规则导致漏填一行
+    for (int y = h - 1; y >= 0; --y) {
+        for (int x = 0; x < w; ++x) {
+            if (mask(x, y) != 0) {
+                mask(x, y + 1) = 1;
+            }
+        }
+    }
+
+    return mask;
 }

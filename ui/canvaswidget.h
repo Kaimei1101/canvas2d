@@ -51,6 +51,9 @@ class CanvasWidget : public QWidget
     void setTool(Tool tool)
     {
         this->tool = tool;
+        if (tool == Tool::Fill) {
+            canvas.clearSelection();
+        }
         operations.clear();
         arcPhase = ArcPhase::Idle;
         update();
@@ -74,6 +77,7 @@ class CanvasWidget : public QWidget
   signals:
     void mouseWorldPos(Point pos);
     void scaleChanged(double scale);
+    void showStatusMessage(const QString &msg, int timeoutMs = 3000);
 };
 
 #endif // CANVASWIDGET_H

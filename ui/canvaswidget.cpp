@@ -1,7 +1,6 @@
 #include "canvaswidget.h"
 
 #include <QApplication>
-#include <QMessageBox>
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -73,10 +72,6 @@ void CanvasWidget::paintEvent(QPaintEvent *)
 {
     canvas.redraw();
     Point worldPos = canvas.getCamera().screenToWorld(lastPos);
-
-    // 选择工具：所有重心亮起；选中多个时显示组重心
-    if (tool == Tool::Select) {
-    }
 
     switch (tool) {
     case Tool::Select:
@@ -486,18 +481,10 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
             // }
             break;
         case Tool::Fill: {
-            // 实验二-2：点击判定是否落在合法封闭图形内，
-            // 若合法则把图形填充属性改为当前填充色；
-            // 多个图形重叠时填充最上层（数组末尾）的一个
-            const auto &shapes = canvas.getShapes();
-            for (auto it = shapes.rbegin(); it != shapes.rend(); ++it) {
-                if ((*it)->isClosed() && (*it)->contains(worldPos)) {
-                    (*it)->setFill(fillColor);
-                    canvas.markDirty();
-                    update();
-                    break;
-                }
+            if (!canvas.applyFill(worldPos, fillColor)) {
+                emit showStatusMessage("填充区域超出视窗");
             }
+            update();
             break;
         }
         case Tool::Clip: {
@@ -685,7 +672,7 @@ void CanvasWidget::showTransformDialog(bool)
 {
     const auto &selected = canvas.getSelected();
     if (selected.empty()) {
-        QMessageBox::warning(this, "提示", "未选中任何图形！");
+        emit showStatusMessage("未选中任何图形");
         return;
     }
 

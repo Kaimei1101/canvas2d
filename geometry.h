@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "pixel_buffer.h"
 #include "point.h"
 
 namespace Geometry
@@ -68,6 +69,8 @@ std::vector<double> circleEdgeAngles(Point center, double radius, Point a,
 
 std::vector<ArcSeg> clipArc(Point center, double radius, Point ep1, Point ep2,
                             int side, std::span<const Point> clip);
+
+std::vector<Pixel> traceContour(const MaskBuffer &mask);
 } // namespace Geometry
 
 #endif // GEOMETRY_H

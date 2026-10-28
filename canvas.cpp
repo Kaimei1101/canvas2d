@@ -168,3 +168,42 @@ void Canvas::applyClip(std::span<const Point> clipPoints)
     shapes.insert(shapes.end(), std::make_move_iterator(newShapes.begin()),
                   std::make_move_iterator(newShapes.end()));
 }
+
+bool Canvas::applyFill(Point worldPos, RGBA fillColor)
+{
+    Pixel startPixel = getCamera().worldToPixel(worldPos);
+
+    if (dirty) {
+        redraw();
+    }
+
+    auto maskOpt = target.generateFillMask(startPixel);
+    if (!maskOpt) {
+        return false;
+    }
+
+    auto pixelContour = Geometry::traceContour(std::move(*maskOpt));
+
+    if (pixelContour.size() < 3) {
+        return true;
+    }
+
+    std::vector<Point> worldContour;
+    worldContour.reserve(pixelContour.size());
+    for (auto px : pixelContour) {
+        worldContour.push_back(getCamera().pixelToWorld(px));
+    }
+
+    auto shape =
+        std::make_unique<Polygon>(std::move(worldContour), true, fillColor,
+                                  false, 0.0, RGBA{255, 255, 255}, LineType{});
+    shapes.insert(shapes.begin(), std::move(shape));
+
+    std::unordered_set<size_t> newSelection;
+    for (size_t idx : selected) {
+        newSelection.insert(idx + 1);
+    }
+    selected = std::move(newSelection);
+
+    return true;
+}

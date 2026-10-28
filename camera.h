@@ -15,6 +15,7 @@ class Camera
 
     Camera();
     Pixel worldToPixel(Point p) const;
+    Point pixelToWorld(Pixel p) const;
     Point worldToCanvas(Point p) const;
     Point screenToWorld(Point p) const;
     void move(Point screen_vec);

@@ -9,7 +9,7 @@
 
 class RenderTarget
 {
-    PixelBuffer pixels;
+    RGBABuffer pixels;
 
   public:
     Camera camera;
@@ -18,9 +18,10 @@ class RenderTarget
     RenderTarget(int width, int height);
     int getWidth() const;
     int getHeight() const;
-    const PixelBuffer &getPixels() const;
+    const RGBABuffer &getPixels() const;
     void resize(int width, int height);
     void clear();
+    std::optional<RGBA> getPixel(Pixel p);
     void setPixel(Pixel p, RGBA color);
     void fillSpan(int y, int x0, int x1, RGBA color);
     void fillSpanVertical(int x, int y0, int y1, RGBA color);
@@ -38,6 +39,7 @@ class RenderTarget
     void fillPolygon(std::span<const Point> verts, RGBA color);
     void drawCross(Point p, double width = 3, double radius = 5,
                    RGBA color = RGBA{220, 0, 0});
+    std::optional<MaskBuffer> generateFillMask(Pixel seed);
 
   private:
     void setPixelUnchecked(Pixel p, RGBA color);

@@ -21,7 +21,7 @@ qt_add_qml_module(appGraphic
     VERSION 1.0
     QML_FILES
     SOURCES main.cpp
-    SOURCES pixel_buffer.h pixel_buffer.cpp
+    SOURCES pixel_buffer.h
     SOURCES rendertarget.h rendertarget.cpp
     SOURCES canvas.h canvas.cpp
     SOURCES ui/canvaswidget.h ui/canvaswidget.cpp

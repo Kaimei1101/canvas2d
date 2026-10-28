@@ -308,4 +308,50 @@ std::vector<ArcSeg> clipArc(Point center, double radius, Point ep1, Point ep2,
     }
     return result;
 }
+
+std::vector<Pixel> traceContour(const MaskBuffer &mask)
+{
+    static constexpr Pixel DIRS[8] = {{0, -1}, {1, -1}, {1, 0},  {1, 1},
+                                      {0, 1},  {-1, 1}, {-1, 0}, {-1, -1}};
+
+    int w = mask.getWidth();
+    int h = mask.getHeight();
+
+    Pixel start = {-1, -1};
+    auto data = mask.data();
+    for (int i = 0; i < static_cast<size_t>(w) * h; ++i) {
+        if (data[i] != 0) {
+            start = {i % w, i / w};
+            goto FIND;
+        }
+    }
+    return {};
+
+FIND:
+    std::vector<Pixel> contour;
+    Pixel curr = start;
+    int prevDir = 1; // Pixel {1, -1}
+
+    do {
+        contour.push_back(curr);
+
+        bool found = false;
+        for (int i = 1; i <= 8; ++i) {
+            int dirIdx = (prevDir + i) % 8;
+            auto [nx, ny] = curr + DIRS[dirIdx];
+
+            if (nx >= 0 && nx < w && ny >= 0 && ny < h && mask(nx, ny) != 0) {
+                prevDir = (dirIdx + 4) % 8;
+                curr = {nx, ny};
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            break;
+        }
+    } while (curr != start);
+
+    return contour;
+}
 }; // namespace Geometry
