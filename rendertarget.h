@@ -1,6 +1,7 @@
 #ifndef RENDERTARGET_H
 #define RENDERTARGET_H
 
+#include <optional>
 #include <span>
 
 #include "camera.h"
@@ -43,6 +44,7 @@ class RenderTarget
 
   private:
     void setPixelUnchecked(Pixel p, RGBA color);
+    bool shouldCullCircle(Pixel center, int radius, int width);
     void drawLineImpl(Pixel start, Pixel end, int width, RGBA color,
                       LineType lineType);
     void drawCircleOutlineImpl(Pixel center, int radius, int width, RGBA color,

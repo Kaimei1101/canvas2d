@@ -45,15 +45,20 @@ class Circle : public Drawable
 
     // 圆弧构造函数（圆心、半径、弧端点1、弧端点2、保留侧符号）
     Circle(Point center, double radius, Point ep1, Point ep2, int side,
-           bool fill = false, RGBA fillColor = RGBA{255, 255, 255},
            bool stroke = true, double width = 1,
            RGBA strokeColor = RGBA{0, 0, 0}, LineType lineType = LineType{});
+
+    static std::optional<Circle> fromThreePoints(Point p1, Point p2, Point p3,
+                                                 bool stroke, double width,
+                                                 RGBA strokeColor,
+                                                 LineType lineType);
 
     const ArcData &getArcData() const { return arcData; }
 
     bool isFullCircle() const { return arcData.isFullCircle; }
 
-    void draw(RenderTarget &rt) const override;
+    void drawStroke(RenderTarget &rt) const override;
+    void fillInner(RenderTarget &rt) const override;
     void drawSelHighlight(RenderTarget &rt) const override;
     bool hitTest(const Camera &camera, Point p) const override;
     Point centroid() const override { return center; }
@@ -73,6 +78,8 @@ class Circle : public Drawable
     AABB bounds() const override;
     std::vector<std::unique_ptr<Drawable>>
     clip(std::span<const Point> clipPoints);
+    std::optional<std::pair<Point, std::function<void(Point)>>>
+    getModificationHandler(const Camera &camera, Point p) override;
 
     Point getCenter() const { return center; }
     double getRadius() const { return radius; }
@@ -82,6 +89,9 @@ class Circle : public Drawable
     RGBA getStrokeColor() const { return strokeColor; }
     double getLineWidth() const { return width; }
     LineType getLineType() const { return lineType; }
+
+  private:
+    Point getArcRadiusModPoint() const;
 };
 
 #endif // CIRCLE_H

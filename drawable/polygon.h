@@ -24,7 +24,8 @@ class Polygon : public Drawable
             RGBA fillColor = RGBA{255, 255, 255}, bool stroke = true,
             double width = 1, RGBA strokeColor = RGBA{0, 0, 0},
             LineType lineType = LineType{});
-    void draw(RenderTarget &rt) const override;
+    void drawStroke(RenderTarget &rt) const override;
+    void fillInner(RenderTarget &rt) const override;
     void drawSelHighlight(RenderTarget &rt) const override;
     bool hitTest(const Camera &camera, Point p) const override;
     // 重心取顶点算术平均
@@ -40,6 +41,8 @@ class Polygon : public Drawable
     inline AABB bounds() const override { return AABB{verts}; }
     std::vector<std::unique_ptr<Drawable>>
     clip(std::span<const Point> clipPoints);
+    std::optional<std::pair<Point, std::function<void(Point)>>>
+    getModificationHandler(const Camera &camera, Point p) override;
 
     const std::vector<Point> &getVerts() const { return verts; }
     bool isFilled() const { return fill; }

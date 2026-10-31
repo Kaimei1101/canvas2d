@@ -18,6 +18,8 @@ class Canvas
     bool dirty;
 
   public:
+    Point pivot;
+
     Canvas(int width, int height);
 
     int getWidth() const;
@@ -69,7 +71,7 @@ class Canvas
     const RenderTarget &getRenderTarget() const;
     void resize(int width, int height);
     void redraw();
-    inline const std::unordered_set<std::size_t> &getSelected() const
+    const std::unordered_set<std::size_t> &getSelected() const
     {
         return selected;
     }
@@ -88,12 +90,13 @@ class Canvas
     bool applyFill(Point worldPos, RGBA fillColor);
     inline void drawShape(const Drawable &shape)
     {
-        shape.draw(target);
+        shape.fillInner(target);
+        shape.drawStroke(target);
         dirty = true;
     }
 
   private:
-    void drawCentroids();
+    void drawPivot();
     void drawCentroidMark(Point p);
     void drawGroupCentroidMark(Point p);
 };

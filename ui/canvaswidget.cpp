@@ -15,45 +15,19 @@
 #include "transformdialog.h"
 
 CanvasWidget::CanvasWidget()
-    : canvas{0, 0}, tool{Tool::Select}, lastPos{0, 0},
-      leftDrag{DragPhase::Idle}, leftDragPos{0, 0},
-      selDragtype{SelDragType::Select}, arcPhase{ArcPhase::Idle},
-      arcCenter{0, 0}, arcRadius{0}, arcSecA{0, 0}, arcSecB{0, 0}, arcEp1{0, 0},
-      arcEp2{0, 0}, lineWidth{1}, stroke{true}, fill{false},
-      strokeColor{0, 0, 0}, fillColor{0, 0, 0}
+    : canvas{0, 0}, tool{Tool::Select}, lastPos{0, 0}, arcCenter{0, 0},
+      arcRadius{0}, arcSecA{0, 0}, arcSecB{0, 0}, arcEp1{0, 0}, arcEp2{0, 0},
+      lineWidth{1}, stroke{true}, fill{false}, strokeColor{0, 0, 0},
+      fillColor{0, 0, 0}
 
 {
     canvas.setScale(devicePixelRatio());
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-}
-
-// 割线 P = a + t·d 代入圆方程，解一元二次方程（t 取全直线，不限线段）
-// 有交点时写入 ep1、ep2 并返回 true
-static bool intersectCircle(Point a, Point b, Point center, double radius,
-                            Point &ep1, Point &ep2)
-{
-    const double dx = b.x - a.x;
-    const double dy = b.y - a.y;
-    const double fx = a.x - center.x;
-    const double fy = a.y - center.y;
-
-    const double qa = dx * dx + dy * dy;
-    if (qa < 1e-12) {
-        return false;
-    }
-    const double qb = 2.0 * (fx * dx + fy * dy);
-    const double qc = fx * fx + fy * fy - radius * radius;
-    const double disc = qb * qb - 4.0 * qa * qc;
-    if (disc < 0) {
-        return false;
-    }
-    const double sq = std::sqrt(disc);
-    const double t1 = (-qb - sq) / (2.0 * qa);
-    const double t2 = (-qb + sq) / (2.0 * qa);
-    ep1 = Point{a.x + t1 * dx, a.y + t1 * dy};
-    ep2 = Point{a.x + t2 * dx, a.y + t2 * dy};
-    return true;
+    updateTimer = new QTimer(this);
+    updateTimer->setInterval(16);
+    connect(updateTimer, &QTimer::timeout, this, &CanvasWidget::processInput);
+    updateTimer->start();
 }
 
 // 辅助标记：以 p 为中心的红色小十字（参照 ArcTool 的交点标记）
@@ -75,8 +49,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
 
     switch (tool) {
     case Tool::Select:
-        if (leftDrag == DragPhase::Dragging &&
-            selDragtype == SelDragType::Select) {
+        if (isLeftDrag && selDragtype == SelDragType::Select) {
             canvas.drawShape(Polygon{
                 std::vector<Point>{leftDragPos,
                                    Point{leftDragPos.x, worldPos.y}, worldPos,
@@ -116,6 +89,22 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         if (arcPhase == ArcPhase::PickSide) {
             drawCross(canvas, arcEp1);
             drawCross(canvas, arcEp2);
+        }
+        break;
+
+    case Tool::ThreePointsArc:
+        if (operations.size() <= 2) {
+            for (auto p : operations) {
+                drawCross(canvas, p);
+            }
+        }
+        if (operations.size() == 2) {
+            auto c = Circle::fromThreePoints(operations[0], operations[1],
+                                             worldPos, stroke, lineWidth,
+                                             strokeColor, lineType);
+            if (c) {
+                canvas.drawShape(*c);
+            }
         }
         break;
 
@@ -248,36 +237,93 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *e)
         canvas.moveCamera(lastPos - position);
         update();
     }
+
+    if (!(e->buttons() & Qt::LeftButton)) {
+        isLeftDrag = false;
+    }
     auto worldPos = canvas.getCamera().screenToWorld(position);
     if (tool == Tool::Select) {
-        if (leftDrag == DragPhase::Idle) {
-            auto tol = 7.0 * devicePixelRatio() / canvas.getCamera().scale;
-            if (canvas.getSelected().empty() ||
-                canvas.selCentroid().distanceSqr(worldPos) > tol * tol) {
+        do {
+            if (!(e->buttons() & Qt::LeftButton)) {
+                auto tol = 7.0 * devicePixelRatio() / canvas.getCamera().scale;
+                if (!canvas.getSelected().empty() &&
+                    canvas.pivot.distanceSqr(worldPos) <= tol * tol) {
+                    selDragtype = SelDragType::MovePivot;
+                    setCursor(Qt::CrossCursor);
+                    break;
+                }
+
+                bool mod = false;
+                for (auto i : canvas.getSelected()) {
+                    modArg = canvas.getShapes()[i]->getModificationHandler(
+                        canvas.getCamera(), worldPos);
+                    if (modArg) {
+                        mod = true;
+                        break;
+                    }
+                }
+                if (mod) {
+                    selDragtype = SelDragType::Mod;
+                    setCursor(Qt::CrossCursor);
+                    break;
+                }
+
+                bool move = false;
+                for (auto i : canvas.getSelected()) {
+                    if (canvas.getShapes()[i]->hitTest(canvas.getCamera(),
+                                                       worldPos)) {
+                        move = true;
+                        break;
+                    }
+                }
+                if (move) {
+                    selDragtype = SelDragType::Move;
+                    setCursor(Qt::SizeAllCursor);
+                    break;
+                }
+
                 selDragtype = SelDragType::Select;
                 unsetCursor();
-            } else {
-                selDragtype = SelDragType::Move;
-                setCursor(Qt::SizeAllCursor);
+                break;
             }
-        }
-        if (leftDrag != DragPhase::Idle) {
-            auto startDragDis = QApplication::startDragDistance();
-            if (leftDrag == DragPhase::Pending &&
-                worldPos.distanceSqr(leftDragPos) >
+            if (!isLeftDrag) {
+                auto startDragDis = QApplication::startDragDistance();
+                if (worldPos.distanceSqr(leftDragPos) >
                     startDragDis * startDragDis) {
-                leftDrag = DragPhase::Dragging;
-                if (selDragtype == SelDragType::Move) {
-                    canvas.applyTransform(Transform{worldPos - leftDragPos});
+                    isLeftDrag = true;
+                    if (selDragtype == SelDragType::Move) {
+                        canvas.applyTransform(
+                            Transform{worldPos - leftDragPos});
+                        update();
+                    } else if (selDragtype == SelDragType::MovePivot) {
+                        canvas.pivot = canvas.pivot + (worldPos - leftDragPos);
+                        update();
+                    } else if (selDragtype == SelDragType::Mod) {
+                        if (modArg) {
+                            modArg->second(worldPos -
+                                           (leftDragPos - modArg->first));
+                        }
+                        update();
+                    }
                 }
-            }
-            if (leftDrag == DragPhase::Dragging &&
-                selDragtype == SelDragType::Move) {
+            } else if (selDragtype == SelDragType::Move) {
                 canvas.applyTransform(Transform{
                     worldPos - canvas.getCamera().screenToWorld(lastPos)});
+                update();
+            } else if (selDragtype == SelDragType::MovePivot) {
+                canvas.pivot =
+                    canvas.pivot +
+                    (worldPos - canvas.getCamera().screenToWorld(lastPos));
+                update();
+            } else if (selDragtype == SelDragType::Mod) {
+                if (modArg) {
+                    modArg->second(worldPos - (leftDragPos - modArg->first));
+                }
+                update();
+            } else {
+                update();
             }
-            update();
-        }
+        } while (false);
     } else if (tool == Tool::Arc) {
         auto worldPos = canvas.getCamera().screenToWorld(position);
         switch (arcPhase) {
@@ -307,33 +353,36 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *e)
     e->accept();
 }
 
-void CanvasWidget::mousePressEvent(QMouseEvent *e)
+void CanvasWidget::handleRightClick(QMouseEvent *e)
 {
-    auto worldPos = canvas.getCamera().screenToWorld(toPoint(e->position()));
+    auto pos = toPoint(e->position());
+    auto worldPos = canvas.getCamera().screenToWorld(pos);
 
-    if (tool == Tool::Line && e->button() == Qt::RightButton) {
+    if (tool == Tool::Line) {
         if (!operations.empty()) {
             canvas.addShape(std::make_unique<Line>(
                 operations.back(), worldPos, lineWidth, strokeColor, lineType));
             operations.pop_back();
             update();
         }
-        e->accept();
-        return;
-    }
-
-    // 圆弧工具：右键随时取消
-    if (tool == Tool::Arc && e->button() == Qt::RightButton) {
+    } else if (tool == Tool::ThreePointsArc) {
+        operations.push_back(worldPos);
+        if (operations.size() == 3) {
+            auto c = Circle::fromThreePoints(operations[0], operations[1],
+                                             operations[2], stroke, lineWidth,
+                                             strokeColor, lineType);
+            if (c) {
+                canvas.addShape(std::make_unique<Circle>(std::move(*c)));
+            }
+        }
+        operations.clear();
+    } else if (tool == Tool::Arc) {
+        // 圆弧工具：右键随时取消
         if (arcPhase != ArcPhase::Idle) {
             arcPhase = ArcPhase::Idle;
-            update();
         }
-        e->accept();
-        return;
-    }
-
-    // 多边形工具：右键完成（≥3 点提交为正式多边形，不足 3 点取消）
-    if (tool == Tool::Polygon && e->button() == Qt::RightButton) {
+    } else if (tool == Tool::Polygon) {
+        // 多边形工具：右键完成（≥3 点提交为正式多边形，不足 3 点取消）
         operations.push_back(worldPos);
         if (operations.size() >= 3) {
             canvas.addShape(std::make_unique<Polygon>(
@@ -341,13 +390,8 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
                 strokeColor, lineType));
         }
         operations.clear();
-        update();
-        e->accept();
-        return;
-    }
-
-    // 曲线工具：右键完成（=2 点退化为直线，≥3 点提交为B样条，否则取消）
-    if (tool == Tool::Curve && e->button() == Qt::RightButton) {
+    } else if (tool == Tool::Curve) {
+        // 曲线工具：右键完成（=2 点退化为直线，≥3 点提交为B样条，否则取消）
         operations.push_back(worldPos);
         if (operations.size() == 2) {
             canvas.addShape(std::make_unique<Line>(operations[0], operations[1],
@@ -360,13 +404,9 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
                                                       strokeColor, lineType));
         }
         operations.clear();
-        update();
-        e->accept();
-        return;
-    }
-
-    // 贝塞尔曲线工具：右键完成（=2 点退化为直线，≥3 点提交为B样条，否则取消）
-    if (tool == Tool::BezierCurve && e->button() == Qt::RightButton) {
+    } else if (tool == Tool::BezierCurve) {
+        // 贝塞尔曲线工具：右键完成（=2 点退化为直线，≥3
+        // 点提交为B样条，否则取消）
         operations.push_back(worldPos);
         if (operations.size() == 2) {
             canvas.addShape(std::make_unique<Line>(operations[0], operations[1],
@@ -377,70 +417,76 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
                 std::move(operations), lineWidth, strokeColor, lineType));
         }
         operations.clear();
-        update();
-        e->accept();
-        return;
-    }
-
-    // 裁剪工具：右键完成窗口并执行裁剪（不足 3 点取消）
-    if (tool == Tool::Clip && e->button() == Qt::RightButton) {
+    } else if (tool == Tool::Clip) {
+        // 裁剪工具：右键完成窗口并执行裁剪（不足 3 点取消）
         if (operations.size() >= 3) {
             canvas.applyClip(operations);
         }
         operations.clear();
+    }
+}
+
+void CanvasWidget::mousePressEvent(QMouseEvent *e)
+{
+    if (e->button() == Qt::RightButton) {
+        handleRightClick(e);
         update();
         e->accept();
         return;
     }
 
-    if (tool == Tool::Arc && e->button() == Qt::LeftButton) {
-        switch (arcPhase) {
-        case ArcPhase::Idle:
-            // 第一次按下：确定圆心
-            arcCenter = worldPos;
-            arcRadius = 0;
-            arcPhase = ArcPhase::CenterDown;
-            update();
-            break;
-
-        case ArcPhase::RadiusDone:
-            // 第二次按下：开始画割线
-            arcSecA = worldPos;
-            arcSecB = worldPos;
-            arcPhase = ArcPhase::SecantDown;
-            update();
-            break;
-
-        case ArcPhase::PickSide: {
-            // 第三次点击：确定保留侧（相对 ep1→ep2 方向表达）
-            const double dx = arcEp2.x - arcEp1.x;
-            const double dy = arcEp2.y - arcEp1.y;
-            const double cross =
-                dx * (worldPos.y - arcEp1.y) - dy * (worldPos.x - arcEp1.x);
-            if (std::abs(cross) < 1e-6) {
-                // 点击恰在割线上，无效，保持选侧状态
-                break;
-            }
-            canvas.addShape(std::make_unique<Circle>(
-                arcCenter, arcRadius, arcEp1, arcEp2, cross > 0 ? 1 : -1, false,
-                fillColor, stroke, lineWidth, strokeColor, lineType));
-            arcPhase = ArcPhase::Idle;
-            update();
-            break;
-        }
-
-        default:
-            break;
-        }
-        e->accept();
-        return;
-    }
+    auto worldPos = canvas.getCamera().screenToWorld(toPoint(e->position()));
 
     if (e->button() == Qt::LeftButton) {
+        isLeftDrag = false;
+        leftDragPos = worldPos;
+
+        if (tool == Tool::Arc) {
+            switch (arcPhase) {
+            case ArcPhase::Idle:
+                // 第一次按下：确定圆心
+                arcCenter = worldPos;
+                arcRadius = 0;
+                arcPhase = ArcPhase::CenterDown;
+                update();
+                break;
+
+            case ArcPhase::RadiusDone:
+                // 第二次按下：开始画割线
+                arcSecA = worldPos;
+                arcSecB = worldPos;
+                arcPhase = ArcPhase::SecantDown;
+                update();
+                break;
+
+            case ArcPhase::PickSide: {
+                // 第三次点击：确定保留侧（相对 ep1→ep2 方向表达）
+                const double dx = arcEp2.x - arcEp1.x;
+                const double dy = arcEp2.y - arcEp1.y;
+                const double cross =
+                    dx * (worldPos.y - arcEp1.y) - dy * (worldPos.x - arcEp1.x);
+                if (std::abs(cross) < 1e-6) {
+                    // 点击恰在割线上，无效，保持选侧状态
+                    break;
+                }
+                canvas.addShape(std::make_unique<Circle>(
+                    arcCenter, arcRadius, arcEp1, arcEp2, cross > 0 ? 1 : -1,
+                    stroke, lineWidth, strokeColor, lineType));
+                arcPhase = ArcPhase::Idle;
+                update();
+                break;
+            }
+
+            default:
+                break;
+            }
+            e->accept();
+            return;
+        }
+
         switch (tool) {
         case Tool::Select: {
-            leftDrag = DragPhase::Pending;
-            leftDragPos = worldPos;
+            // auto tol = 7.0 * devicePixelRatio() / canvas.getCamera().scale;
             break;
         }
         case Tool::Line:
@@ -463,6 +509,18 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
                 update();
             } else {
                 operations.push_back(worldPos);
+            }
+            break;
+        case Tool::ThreePointsArc:
+            operations.push_back(worldPos);
+            if (operations.size() == 3) {
+                auto c = Circle::fromThreePoints(
+                    operations[0], operations[1], operations[2], stroke,
+                    lineWidth, strokeColor, lineType);
+                if (c) {
+                    canvas.addShape(std::make_unique<Circle>(std::move(*c)));
+                }
+                operations.clear();
             }
             break;
         case Tool::Polygon:
@@ -516,19 +574,25 @@ void CanvasWidget::mousePressEvent(QMouseEvent *e)
             update();
             break;
         }
+        default:
+            break;
         }
     }
 
     e->accept();
 }
 
+void CanvasWidget::mouseDoubleClickEvent(QMouseEvent *e) { mousePressEvent(e); }
+
 void CanvasWidget::mouseReleaseEvent(QMouseEvent *e)
 {
     auto worldPos = canvas.getCamera().screenToWorld(toPoint(e->position()));
 
     if (tool == Tool::Select && e->button() == Qt::LeftButton) {
-        if (selDragtype == SelDragType::Move) {
-            leftDrag = DragPhase::Idle;
+        if (selDragtype == SelDragType::Move ||
+            selDragtype == SelDragType::MovePivot ||
+            selDragtype == SelDragType::Mod) {
+            isLeftDrag = false;
             e->accept();
             return;
         }
@@ -552,7 +616,7 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *e)
             }
         };
 
-        if (leftDrag == DragPhase::Pending) {
+        if (!isLeftDrag) {
             const auto &shapes = canvas.getShapes();
             auto hitIdx = std::ssize(shapes) - 1;
             for (; hitIdx >= 0; --hitIdx) {
@@ -562,7 +626,7 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *e)
             }
             select(hitIdx);
             update();
-        } else if (leftDrag == DragPhase::Dragging) {
+        } else if (isLeftDrag) {
             AABB range{leftDragPos, worldPos};
             for (std::size_t i = 0; i < canvas.getShapes().size(); ++i) {
                 if (range.contains(canvas.getShapes()[i]->bounds())) {
@@ -571,7 +635,7 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *e)
             }
             update();
         }
-        leftDrag = DragPhase::Idle;
+        isLeftDrag = false;
         e->accept();
         return;
     }
@@ -597,15 +661,17 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *e)
                 update();
                 break;
             }
-            const bool hit = intersectCircle(arcSecA, arcSecB, arcCenter,
-                                             arcRadius, arcEp1, arcEp2);
-            if (!hit || arcEp1.distance(arcEp2) < 2.0) {
+            auto ep = Geometry::intersectCircle(arcSecA, arcSecB, arcCenter,
+                                                arcRadius);
+            if (!ep || ep->first.distance(ep->second) < 2.0) {
                 // 无交点（含相切退化）：创建整圆
                 canvas.addShape(std::make_unique<Circle>(
                     arcCenter, arcRadius, fill, fillColor, stroke, lineWidth,
                     strokeColor, lineType));
                 arcPhase = ArcPhase::Idle;
             } else {
+                arcEp1 = ep->first;
+                arcEp2 = ep->second;
                 arcPhase = ArcPhase::PickSide;
             }
             update();
@@ -653,8 +719,12 @@ void CanvasWidget::keyPressEvent(QKeyEvent *e)
         update();
     } else if (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) {
         canvas.removeShapes();
+        modArg = std::nullopt;
         update();
     } else {
+        if (!e->isAutoRepeat()) {
+            pressedKeys.insert(e->key());
+        }
         return;
     }
     e->accept();
@@ -684,6 +754,85 @@ void CanvasWidget::showTransformDialog(bool)
     TransformDialog dlg(initPivot, this);
     if (dlg.exec() == QDialog::Accepted) {
         canvas.applyTransform(dlg.transform());
+        update();
+    }
+}
+
+void CanvasWidget::keyReleaseEvent(QKeyEvent *e)
+{
+    if (!e->isAutoRepeat()) {
+        pressedKeys.remove(e->key());
+    }
+    e->accept();
+}
+
+void CanvasWidget::focusOutEvent(QFocusEvent *e)
+{
+    pressedKeys.clear();
+    QWidget::focusOutEvent(e);
+}
+
+void CanvasWidget::processInput()
+{
+    if (pressedKeys.isEmpty()) {
+        return;
+    }
+
+    auto &selection = canvas.getSelected();
+    if (selection.empty()) {
+        return;
+    }
+
+    double dt = 0.016;
+    double moveSpeed = 300.0 * dt;
+    double zoomSpeed = 2.0 * dt;
+    double rotateSpeed = 2.0 * dt;
+
+    double moveX = 0.0, moveY = 0.0;
+    if (pressedKeys.contains(Qt::Key_W)) {
+        moveY += 1.0;
+    }
+    if (pressedKeys.contains(Qt::Key_S)) {
+        moveY -= 1.0;
+    }
+    if (pressedKeys.contains(Qt::Key_A)) {
+        moveX += 1.0;
+    }
+    if (pressedKeys.contains(Qt::Key_D)) {
+        moveX -= 1.0;
+    }
+
+    double worldMoveX = 0, worldMoveY = 0;
+    if (moveX != 0.0 || moveY != 0.0) {
+        double length = std::sqrt(moveX * moveX + moveY * moveY);
+        moveX /= length;
+        moveY /= length;
+
+        worldMoveX = moveX * moveSpeed;
+        worldMoveY = moveY * moveSpeed;
+    }
+
+    double zoomFactor = 1.0;
+    if (pressedKeys.contains(Qt::Key_Shift)) {
+        zoomFactor *= (1.0 + zoomSpeed);
+    }
+    if (pressedKeys.contains(Qt::Key_Space)) {
+        zoomFactor /= (1.0 + zoomSpeed);
+    }
+
+    double rotationDelta = 0.0;
+    if (pressedKeys.contains(Qt::Key_Q)) {
+        rotationDelta += rotateSpeed;
+    }
+    if (pressedKeys.contains(Qt::Key_E)) {
+        rotationDelta -= rotateSpeed;
+    }
+
+    if (worldMoveX != 0 || worldMoveY != 0 || zoomFactor != 1.0 ||
+        rotationDelta != 0.0) {
+        Transform t{canvas.pivot, Point{worldMoveX, worldMoveY}, zoomFactor,
+                    rotationDelta};
+        canvas.applyTransform(t);
         update();
     }
 }

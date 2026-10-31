@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "aabb.h"
 #include "pixel_buffer.h"
 #include "point.h"
 
@@ -71,6 +72,14 @@ std::vector<ArcSeg> clipArc(Point center, double radius, Point ep1, Point ep2,
                             int side, std::span<const Point> clip);
 
 std::vector<Pixel> traceContour(const MaskBuffer &mask);
+
+AABB arcBounds(Point center, double radius, ArcSeg arcData);
+
+std::optional<std::pair<Point, Point>>
+intersectCircle(Point a, Point b, Point center, double radius);
+
+std::optional<std::pair<Point, double>> circleFrom3Points(Point p1, Point p2,
+                                                          Point p3);
 } // namespace Geometry
 
 #endif // GEOMETRY_H

@@ -118,13 +118,11 @@ std::vector<Point> clipPolygon(std::vector<Point> subject,
                     subject.push_back(e); // 内->内
                 } else {
                     const double t = edgeIntersectParam(s, e, a, b);
-                    subject.push_back(
-                        Point{s.x + t * (e.x - s.x), s.y + t * (e.y - s.y)});
+                    subject.push_back(s + (e - s) * t);
                 }
             } else if (ein) {
                 const double t = edgeIntersectParam(s, e, a, b);
-                subject.push_back(
-                    Point{s.x + t * (e.x - s.x), s.y + t * (e.y - s.y)});
+                subject.push_back(s + (e - s) * t);
                 subject.push_back(e); // 外->内
             }
             s = e;
@@ -169,16 +167,10 @@ clipLineSegment(Point s, Point e, std::span<const Point> clip)
             t0 = std::max(t0, -C0 / C1); // 入边
         }
     }
-    if (t0 > t1 + 1e-9) {
+    if (t0 > t1 + 1e-9 || t1 - t0 < 1e-9) {
         return std::nullopt;
     }
-    t0 = std::max(t0, 0.0);
-    t1 = std::min(t1, 1.0);
-    if (t1 - t0 < 1e-9) {
-        return std::nullopt;
-    }
-    return std::make_pair(Point{s.x + t0 * d.x, s.y + t0 * d.y},
-                          Point{s.x + t1 * d.x, s.y + t1 * d.y});
+    return std::make_pair(s + d * t0, s + d * t1);
 }
 
 std::vector<double> circleEdgeAngles(Point center, double radius, Point a,
@@ -354,4 +346,77 @@ FIND:
 
     return contour;
 }
+
+AABB arcBounds(Point center, double radius, ArcSeg arcData)
+{
+    // 将圆弧的两个端点和整圆的四个轴向端点（如果在圆弧上）形成AABB
+    AABB bounds{arcData.a, arcData.b};
+    Point localCardinals[4] = {{center.x + radius, center.y},
+                               {center.x, center.y + radius},
+                               {center.x - radius, center.y},
+                               {center.x, center.y - radius}};
+
+    for (auto p : localCardinals) {
+        if (Geometry::cross(arcData.a, arcData.b, p) * arcData.side >= 0) {
+            bounds.expand(p);
+        }
+    }
+
+    return bounds;
+}
+
+// 割线 P = a + t·d 代入圆方程，解一元二次方程（t 取全直线，不限线段）
+std::optional<std::pair<Point, Point>>
+intersectCircle(Point a, Point b, Point center, double radius)
+{
+    auto d = b - a;
+    auto [dx, dy] = d;
+    const double fx = a.x - center.x;
+    const double fy = a.y - center.y;
+
+    const double qa = dx * dx + dy * dy;
+    if (qa < 1e-12 || qa < 1e-6 * radius) {
+        return std::nullopt;
+    }
+    const double qb = 2.0 * (fx * dx + fy * dy);
+    const double qc = fx * fx + fy * fy - radius * radius;
+    const double disc = qb * qb - 4.0 * qa * qc;
+    if (disc < 0) {
+        return std::nullopt;
+    }
+    const double sq = std::sqrt(disc);
+    const double t1 = (-qb - sq) / (2.0 * qa);
+    const double t2 = (-qb + sq) / (2.0 * qa);
+    auto start = a + d * t1;
+    auto end = a + d * t2;
+    if (start.distanceSqr(end) <= radius * radius * 0.01) {
+        return std::nullopt;
+    }
+    return std::make_pair(start, end);
+}
+
+std::optional<std::pair<Point, double>> circleFrom3Points(Point p1, Point p2,
+                                                          Point p3)
+{
+    double a1 = p2.x - p1.x;
+    double b1 = p2.y - p1.y;
+    double c1 = (p2.x * p2.x + p2.y * p2.y - p1.x * p1.x - p1.y * p1.y) / 2.0;
+
+    double a2 = p3.x - p2.x;
+    double b2 = p3.y - p2.y;
+    double c2 = (p3.x * p3.x + p3.y * p3.y - p2.x * p2.x - p2.y * p2.y) / 2.0;
+
+    double d = a1 * b2 - a2 * b1;
+
+    if (std::abs(d) < 1e-9) {
+        return std::nullopt;
+    }
+
+    double cx = (c1 * b2 - c2 * b1) / d;
+    double cy = (a1 * c2 - a2 * c1) / d;
+    double r = std::hypot(cx - p1.x, cy - p1.y);
+
+    return std::pair{Point{cx, cy}, r};
+}
+
 }; // namespace Geometry

@@ -25,7 +25,8 @@ class BSpline : public Drawable
 
     void calKnots();
 
-    void draw(RenderTarget &rt) const override;
+    void drawStroke(RenderTarget &rt) const override;
+    void fillInner(RenderTarget &rt) const override {}
     void drawSelHighlight(RenderTarget &rt) const override;
     bool hitTest(const Camera &camera, Point p) const override;
     Point centroid() const override;
@@ -36,6 +37,8 @@ class BSpline : public Drawable
     std::vector<std::unique_ptr<Drawable>>
     clip(std::span<const Point> clipPoints);
     AABB bounds() const override;
+    std::optional<std::pair<Point, std::function<void(Point)>>>
+    getModificationHandler(const Camera &camera, Point p) override;
 };
 
 #endif // BSPLINE_H

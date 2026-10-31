@@ -1,10 +1,12 @@
+#include "rendertarget.h"
+
 #include <algorithm>
 #include <cmath>
 #include <map>
 #include <ranges>
 #include <stack>
 
-#include "rendertarget.h"
+#include "geometry.h"
 
 RenderTarget::RenderTarget(int width, int height)
     : pixels{width, height, RGBA{255, 255, 255}}
@@ -100,6 +102,14 @@ void RenderTarget::fillSpanVertical(int x, int y0, int y1, RGBA color)
     }
 }
 
+bool RenderTarget::shouldCullCircle(Pixel center, int radius, int width)
+{
+    return center.x + radius < -width ||
+           center.x - radius >= getWidth() + width ||
+           center.y + radius < -width ||
+           center.y - radius >= getHeight() + width;
+}
+
 struct LineTypeCursor {
     std::array<int, 4> pat;
     int cursor;
@@ -130,7 +140,8 @@ void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
     auto start = camera.worldToCanvas(startWorld);
     auto end = camera.worldToCanvas(endWorld);
 
-    auto [dx, dy] = end - start;
+    auto d = end - start;
+    auto [dx, dy] = d;
 
     // Adjust width for sloping line
     auto rawWidth = widthWorld * camera.scale;
@@ -157,16 +168,12 @@ void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
             if (r > t1) {
                 return false;
             }
-            if (r > t0) {
-                t0 = r;
-            }
+            t0 = std::max(t0, r);
         } else {
             if (r < t0) {
                 return false;
             }
-            if (r < t1) {
-                t1 = r;
-            }
+            t1 = std::min(t1, r);
         }
         return true;
     };
@@ -178,8 +185,8 @@ void RenderTarget::drawLine(Point startWorld, Point endWorld, double widthWorld,
         return;
     }
 
-    end = Point{start.x + t1 * dx, start.y + t1 * dy};
-    start = Point{start.x + t0 * dx, start.y + t0 * dy};
+    end = start + d * t1;
+    start = start + d * t0;
 
     drawLineImpl(Pixel{start}, Pixel{end}, width, color, lineType);
 }
@@ -248,6 +255,10 @@ void RenderTarget::drawCircleOutline(Point center, double radius, double width,
 void RenderTarget::drawCircleOutlineImpl(Pixel center, int radius, int width,
                                          RGBA color, LineType lineType)
 {
+    if (shouldCullCircle(center, radius, width)) {
+        return;
+    }
+
     if (radius <= width / 2) {
         fillCircleImpl(center, radius, color);
         return;
@@ -296,6 +307,10 @@ void RenderTarget::fillCircleImpl(Pixel center, int radius, RGBA color)
         return;
     }
 
+    if (shouldCullCircle(center, radius, 0)) {
+        return;
+    }
+
     bresenhamCircle(radius, [&](Pixel p) {
         fillSpan(center.y + p.y, center.x - p.x, center.x + p.x, color);
         fillSpan(center.y - p.y, center.x - p.x, center.x + p.x, color);
@@ -341,8 +356,17 @@ void RenderTarget::fillPolygon(std::span<const Point> verts, RGBA color)
         drawLine(verts[0], verts[1], 0, color, LineType{});
         return;
     }
-    auto view = verts | std::views::transform(
-                            [this](Point p) { return camera.worldToPixel(p); });
+
+    std::vector<Point> viewport{camera.pixelToWorld({-1, -1}),
+                                camera.pixelToWorld({-1, getHeight() - 1}),
+                                camera.pixelToWorld({getWidth(), getHeight()}),
+                                camera.pixelToWorld({getWidth(), -1})};
+    auto clippedVerts = Geometry::clipPolygon(
+        std::vector(verts.begin(), verts.end()), viewport);
+
+    auto view = clippedVerts | std::views::transform([this](Point p) {
+                    return camera.worldToPixel(p);
+                });
     fillPolygonImpl(std::vector(view.begin(), view.end()), color);
 }
 
@@ -378,7 +402,7 @@ void RenderTarget::fillPolygonImpl(std::vector<Pixel> verts, RGBA color)
         et[y].push_back(EdgeInfo{end.y, x, dx});
     }
 
-    yMax = std::min(yMax, getHeight());
+    yMax = std::min(yMax, getHeight() - 1);
     std::vector<EdgeInfo> aet;
     auto it = et.begin();
     auto y = it->first;
@@ -418,6 +442,10 @@ void RenderTarget::drawArc(Point center, double radius, Point ep1, Point ep2,
     int widthPixel =
         std::max(1, static_cast<int>(std::round(width * camera.scale)));
     if (radiusPixel <= 0) {
+        return;
+    }
+
+    if (shouldCullCircle(centerPixel, radiusPixel, widthPixel)) {
         return;
     }
 

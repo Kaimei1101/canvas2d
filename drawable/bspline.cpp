@@ -79,7 +79,7 @@ static bool forEachBSplineSegment(std::span<const Point> pts,
     return true;
 }
 
-void BSpline::draw(RenderTarget &rt) const
+void BSpline::drawStroke(RenderTarget &rt) const
 {
     forEachBSplineSegment(ctrlPts, knots, degree, 50 * (ctrlPts.size() - 1),
                           [&](Point start, Point end) {
@@ -90,22 +90,22 @@ void BSpline::draw(RenderTarget &rt) const
 
 void BSpline::drawSelHighlight(RenderTarget &rt) const
 {
-    for (auto p : ctrlPts) {
-        rt.drawCross(p);
-    }
     forEachBSplineSegment(
         ctrlPts, knots, degree, 50 * (ctrlPts.size() - 1),
         [&](Point start, Point end) {
             rt.drawLine(start, end,
-                        width + Drawable::selHighlightWidth / rt.camera.scale,
-                        Drawable::selHighlightColor, LineType{});
+                        width + Drawable::SEL_HIGHLIGHT_WIDTH / rt.camera.scale,
+                        Drawable::SEL_HIGHLIGHT_COLOR, LineType{});
             return true;
         });
+    for (auto p : ctrlPts) {
+        rt.drawCross(p);
+    }
 }
 
 bool BSpline::hitTest(const Camera &camera, Point p) const
 {
-    double tol = Drawable::hitTestTol / camera.scale + width / 2.0;
+    double tol = Drawable::HIT_TEST_TOL / camera.scale + width / 2.0;
     return !forEachBSplineSegment(
         ctrlPts, knots, degree, 20 * (ctrlPts.size() - 1),
         [&](Point start, Point end) {
@@ -159,4 +159,16 @@ AABB BSpline::bounds() const
                           });
 
     return bound;
+}
+
+std::optional<std::pair<Point, std::function<void(Point)>>>
+BSpline::getModificationHandler(const Camera &camera, Point p)
+{
+    double tol = Drawable::HIT_TEST_TOL / camera.scale;
+    for (auto &c : ctrlPts) {
+        if (c.distanceSqr(p) <= tol * tol) {
+            return std::make_pair(c, [&](Point v) { c = v; });
+        }
+    }
+    return std::nullopt;
 }

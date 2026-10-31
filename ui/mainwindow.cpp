@@ -75,11 +75,9 @@ void MainWindow::setupToolBar()
     addTool(Tool::Select, true);
     addTool(Tool::Line);
     addTool(Tool::Circle);
-    addTool(Tool::Arc);
+    addMenuTool(Tool::Arc, {Tool::ThreePointsArc});
     addTool(Tool::Polygon);
-
     addMenuTool(Tool::Curve, {Tool::BezierCurve});
-
     addTool(Tool::Fill);
     addTool(Tool::Clip);
 

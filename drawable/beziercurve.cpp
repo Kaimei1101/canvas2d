@@ -46,7 +46,7 @@ bool forEachBezierSegment(std::span<const Point> ctrlPts, int steps, F &&f)
     return true;
 }
 
-void BezierCurve::draw(RenderTarget &rt) const
+void BezierCurve::drawStroke(RenderTarget &rt) const
 {
 
     forEachBezierSegment(ctrlPts, 50 * (ctrlPts.size() - 1),
@@ -58,21 +58,21 @@ void BezierCurve::draw(RenderTarget &rt) const
 
 void BezierCurve::drawSelHighlight(RenderTarget &rt) const
 {
-    for (auto p : ctrlPts) {
-        rt.drawCross(p);
-    }
     forEachBezierSegment(
         ctrlPts, 50 * (ctrlPts.size() - 1), [&](Point start, Point end) {
             rt.drawLine(start, end,
-                        width + Drawable::selHighlightWidth / rt.camera.scale,
-                        Drawable::selHighlightColor, LineType{});
+                        width + Drawable::SEL_HIGHLIGHT_WIDTH / rt.camera.scale,
+                        Drawable::SEL_HIGHLIGHT_COLOR, LineType{});
             return true;
         });
+    for (auto p : ctrlPts) {
+        rt.drawCross(p);
+    }
 }
 
 bool BezierCurve::hitTest(const Camera &camera, Point p) const
 {
-    double tol = Drawable::hitTestTol / camera.scale + width / 2.0;
+    double tol = Drawable::HIT_TEST_TOL / camera.scale + width / 2.0;
     return !forEachBezierSegment(
         ctrlPts, 20 * (ctrlPts.size() - 1), [&](Point start, Point end) {
             return Geometry::pointToSegmentDistanceSqr(p, start, end) >
@@ -120,4 +120,16 @@ AABB BezierCurve::bounds() const
                          });
 
     return bound;
+}
+
+std::optional<std::pair<Point, std::function<void(Point)>>>
+BezierCurve::getModificationHandler(const Camera &camera, Point p)
+{
+    double tol = Drawable::HIT_TEST_TOL / camera.scale;
+    for (auto &c : ctrlPts) {
+        if (c.distanceSqr(p) <= tol * tol) {
+            return std::make_pair(c, [&](Point v) { c = v; });
+        }
+    }
+    return std::nullopt;
 }

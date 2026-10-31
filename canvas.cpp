@@ -6,7 +6,8 @@
 #include "geometry.h"
 #include "transform.h"
 
-Canvas::Canvas(int width, int height) : target{width, height}, dirty{false}
+Canvas::Canvas(int width, int height)
+    : target{width, height}, pivot{0, 0}, dirty{false}
 {
     shapes.push_back(std::make_unique<Line>(Point{100, 100}, Point{0, 0}));
     shapes.push_back(std::make_unique<Line>(Point{100, 100}, Point{100, 0}));
@@ -37,12 +38,15 @@ void Canvas::redraw()
     }
     target.clear();
     for (const auto &s : shapes) {
-        s->draw(target);
+        s->fillInner(target);
+    }
+    for (const auto &s : shapes) {
+        s->drawStroke(target);
     }
     for (auto idx : selected) {
         shapes[idx]->drawSelHighlight(target);
     }
-    drawCentroids();
+    drawPivot();
 }
 
 void Canvas::select(std::size_t index)
@@ -51,6 +55,7 @@ void Canvas::select(std::size_t index)
         return;
     }
     if (selected.insert(index).second) {
+        pivot = selCentroid();
         dirty = true;
     }
 }
@@ -61,6 +66,7 @@ void Canvas::unselect(std::size_t index)
         return;
     }
     if (selected.erase(index) > 0) {
+        pivot = selCentroid();
         dirty = true;
     }
 }
@@ -95,15 +101,13 @@ Point Canvas::selCentroid()
     return sum / static_cast<double>(selected.size());
 }
 
-void Canvas::drawCentroids()
+void Canvas::drawPivot()
 {
     for (auto i : selected) {
         drawCentroidMark(shapes[i]->centroid());
     }
-    // 组重心：选中图形重心的算术平均
-    if (selected.size() >= 2) {
-
-        drawGroupCentroidMark(selCentroid());
+    if (!selected.empty()) {
+        drawGroupCentroidMark(pivot);
     }
 }
 
@@ -119,7 +123,7 @@ void Canvas::drawCentroidMark(Point p)
         Point{p.x + half, p.y + half},
         Point{p.x - half, p.y + half},
     };
-    Polygon{verts, true, color, false, 0, color, LineType{}}.draw(target);
+    Polygon{verts, true, color, false, 0, color, LineType{}}.fillInner(target);
 }
 
 // 组重心标记：较大的红色十字 + 圆圈感（用加粗十字表示）
@@ -133,6 +137,7 @@ void Canvas::applyTransform(Transform t)
     for (auto i : selected) {
         shapes[i]->transform(t);
     }
+    pivot = pivot.transform(t);
     dirty = true;
 }
 
@@ -197,13 +202,7 @@ bool Canvas::applyFill(Point worldPos, RGBA fillColor)
     auto shape =
         std::make_unique<Polygon>(std::move(worldContour), true, fillColor,
                                   false, 0.0, RGBA{255, 255, 255}, LineType{});
-    shapes.insert(shapes.begin(), std::move(shape));
-
-    std::unordered_set<size_t> newSelection;
-    for (size_t idx : selected) {
-        newSelection.insert(idx + 1);
-    }
-    selected = std::move(newSelection);
+    shapes.push_back(std::move(shape));
 
     return true;
 }

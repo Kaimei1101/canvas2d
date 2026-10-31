@@ -17,7 +17,8 @@ class Line : public Drawable
   public:
     Line(Point start, Point end, double width = 1, RGBA color = RGBA{0, 0, 0},
          LineType lineType = LineType{});
-    void draw(RenderTarget &rt) const override;
+    void drawStroke(RenderTarget &rt) const override;
+    void fillInner(RenderTarget &rt) const override {}
     void drawSelHighlight(RenderTarget &rt) const override;
     bool hitTest(const Camera &camera, Point p) const override;
     Point centroid() const override { return (start + end) / 2; }
@@ -28,6 +29,8 @@ class Line : public Drawable
     AABB bounds() const override;
     std::vector<std::unique_ptr<Drawable>>
     clip(std::span<const Point> clipPoints);
+    std::optional<std::pair<Point, std::function<void(Point)>>>
+    getModificationHandler(const Camera &camera, Point p) override;
 
     Point getStart() const { return start; }
     Point getEnd() const { return end; }

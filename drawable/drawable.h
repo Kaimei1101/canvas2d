@@ -1,7 +1,9 @@
 #ifndef DRAWABLE_H
 #define DRAWABLE_H
 
+#include <functional>
 #include <memory>
+#include <utility>
 
 #include "aabb.h"
 #include "rendertarget.h"
@@ -11,12 +13,13 @@
 class Drawable
 {
   protected:
-    static constexpr double selHighlightWidth = 4.0;
-    static constexpr RGBA selHighlightColor{30, 144, 255, 100};
-    static constexpr double hitTestTol = 5.0;
+    static constexpr double SEL_HIGHLIGHT_WIDTH = 4.0;
+    static constexpr RGBA SEL_HIGHLIGHT_COLOR{30, 144, 255, 100};
+    static constexpr double HIT_TEST_TOL = 5.0;
 
   public:
-    virtual void draw(RenderTarget &rt) const = 0;
+    virtual void drawStroke(RenderTarget &rt) const = 0;
+    virtual void fillInner(RenderTarget &rt) const = 0;
     virtual void drawSelHighlight(RenderTarget &rt) const = 0;
     virtual bool hitTest(const Camera &camera, Point p) const = 0;
     // 图形重心（世界坐标），用于选择/变换的参考点
@@ -31,6 +34,8 @@ class Drawable
     virtual AABB bounds() const = 0;
     virtual std::vector<std::unique_ptr<Drawable>>
     clip(std::span<const Point> clipPoints) = 0;
+    virtual std::optional<std::pair<Point, std::function<void(Point)>>>
+    getModificationHandler(const Camera &camera, Point p) = 0;
     virtual ~Drawable() = default;
 };
 

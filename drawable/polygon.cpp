@@ -9,21 +9,28 @@ Polygon::Polygon(std::vector<Point> verts, bool fill, RGBA fillColor,
 {
 }
 
-void Polygon::draw(RenderTarget &rt) const
+void Polygon::drawStroke(RenderTarget &rt) const
 {
-    if (fill) {
-        rt.fillPolygon(verts, fillColor);
-    }
     if (stroke) {
         rt.drawPolygonOutline(verts, width, strokeColor, lineType);
     }
 }
 
+void Polygon::fillInner(RenderTarget &rt) const
+{
+    if (fill) {
+        rt.fillPolygon(verts, fillColor);
+    }
+}
+
 void Polygon::drawSelHighlight(RenderTarget &rt) const
 {
-    rt.drawPolygonOutline(verts,
-                          width + Drawable::selHighlightWidth / rt.camera.scale,
-                          Drawable::selHighlightColor, LineType{});
+    rt.drawPolygonOutline(
+        verts, width + Drawable::SEL_HIGHLIGHT_WIDTH / rt.camera.scale,
+        Drawable::SEL_HIGHLIGHT_COLOR, LineType{});
+    for (auto p : verts) {
+        rt.drawCross(p);
+    }
 }
 
 bool Polygon::hitTest(const Camera &camera, Point p) const
@@ -31,7 +38,7 @@ bool Polygon::hitTest(const Camera &camera, Point p) const
     if (verts.empty())
         return false;
 
-    double tol = Drawable::hitTestTol / camera.scale + width / 2.0;
+    double tol = Drawable::HIT_TEST_TOL / camera.scale + width / 2.0;
 
     if (isFilled()) {
         if (contains(p)) {
@@ -89,8 +96,20 @@ Polygon::clip(std::span<const Point> clipPoints)
         return {};
     }
     auto res = std::vector<std::unique_ptr<Drawable>>{};
-    res.push_back(std::make_unique<Polygon>(std::move(result), fill, fillColor,
-                                            stroke, width, strokeColor,
-                                            lineType));
+    res.push_back(std::make_unique<Polygon>(std::move(result), fillInner,
+                                            fillColor, stroke, width,
+                                            strokeColor, lineType));
     return res;
+}
+
+std::optional<std::pair<Point, std::function<void(Point)>>>
+Polygon::getModificationHandler(const Camera &camera, Point p)
+{
+    double tol = Drawable::HIT_TEST_TOL / camera.scale;
+    for (auto &c : verts) {
+        if (c.distanceSqr(p) <= tol * tol) {
+            return std::make_pair(c, [&](Point v) { c = v; });
+        }
+    }
+    return std::nullopt;
 }
